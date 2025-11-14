@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/form_data.dart';
 import '../controllers/form_controllers.dart';
@@ -12,7 +14,6 @@ import '../services/auto_sync_service.dart';
 import '../widgets/menu_widget.dart';
 import '../widgets/form_widgets.dart';
 import 'continue_screen.dart';
-import '../widgets/connection_indicator.dart';
 import '../utils/connection_mixin.dart';
 
 class SideMenu extends StatefulWidget {
@@ -55,19 +56,71 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
   void initState() {
     super.initState();
     _loadAllForms();
+    _startConnectionListener();
+  }
+
+  void _startConnectionListener() {
+    // Écoute les changements de connexion pour afficher les popups
+    Connectivity().onConnectivityChanged.listen((result) async {
+      if (result == ConnectivityResult.none) {
+        // Devenu hors ligne
+        _showConnectionPopup(false);
+      } else {
+        // Devenu en ligne - tester l'accès réel
+        final hasRealInternet = await _testInternetAccess();
+        if (hasRealInternet) {
+          _showConnectionPopup(true);
+        }
+      }
+    });
+  }
+
+  Future<bool> _testInternetAccess() async {
+    try {
+      final response = await http
+          .get(Uri.parse('https://www.google.com'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _showConnectionPopup(bool isOnline) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              isOnline ? Icons.wifi : Icons.wifi_off,
+              color: isOnline ? Colors.green : Colors.red,
+            ),
+            SizedBox(width: 8),
+            Text(isOnline ? 'Connexion rétablie' : 'Hors ligne'),
+          ],
+        ),
+        content: Text(
+          isOnline
+              ? 'Votre appareil est maintenant connecté à Internet.'
+              : 'Votre appareil n\'est pas connecté à Internet. Certaines fonctionnalités peuvent être limitées.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   void onConnectionStatusChanged(Map<String, dynamic> status) {
-    if (!status['hasInternetPlan'] && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Connexion perdue - certaines fonctionnalités sont limitées'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    }
+    // On n'utilise plus le badge, seulement les popups
   }
 
   @override
@@ -408,25 +461,27 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
   }
 
   // =====================================================================
-  // BUILD PRINCIPAL AVEC INDICATEUR DE CONNEXION
+  // BUILD PRINCIPAL SANS INDICATEUR DE CONNEXION
   // =====================================================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      body: Row(
         children: [
-          _buildContentArea(),
-          Positioned(
-            left: 0,
-            top: 28.5,
-            bottom: 0,
-            child: MenuWidget(
-              selectedIndex: _selectedIndex,
-              isMenuCollapsed: _isMenuCollapsed,
-              onMenuItemTap: (index) => setState(() => _selectedIndex = index),
-              onToggleMenu: () => setState(() => _isMenuCollapsed = !_isMenuCollapsed),
-              onLogout: () {},
+          // Menu latéral
+          MenuWidget(
+            selectedIndex: _selectedIndex,
+            isMenuCollapsed: _isMenuCollapsed,
+            onMenuItemTap: (index) => setState(() => _selectedIndex = index),
+            onToggleMenu: () => setState(() => _isMenuCollapsed = !_isMenuCollapsed),
+            onLogout: () {},
+          ),
+          // Contenu principal - S'ADAPTE À TOUTE LA TAILLE D'ÉCRAN
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF5F7FA),
+              child: _buildContent(),
             ),
           ),
         ],
@@ -434,45 +489,18 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     );
   }
 
-  Widget _buildContentArea() {
-    if (_selectedIndex == 0 && _isMenuCollapsed) {
-      return Positioned(
-        left: 98,
-        top: 0,
-        bottom: 0,
-        right: 0,
-        child: Container(
-          color: const Color(0xFFF5F7FA),
-          child: Center(child: Container(width: 702, child: _buildContent())),
-        ),
-      );
-    } else if (_selectedIndex == 0 && !_isMenuCollapsed) {
-      return Positioned.fill(
-        child: Container(
-          color: const Color(0xFFF5F7FA),
-          child: Center(child: Container(width: 700, child: _buildContent())),
-        ),
-      );
-    } else {
-      return Positioned.fill(
-        left: _isMenuCollapsed ? 98 : 300,
-        child: Container(color: const Color(0xFFF5F7FA), child: _buildContent()),
-      );
-    }
-  }
-
   Widget _buildContent() {
     switch (_selectedIndex) {
       case 0:
-        return _buildFormsListContent(); // Liste d'individus en première position
+        return _buildFormsListContent(); // Liste d'individus
       case 1:
-        return _buildDashboardContent(); // Dashboard en deuxième position
+        return _buildDashboardContent(); // Dashboard
       case 2:
         return _buildSynchronizationContent();
       case 3:
         return _buildHistoryContent();
       default:
-        return _buildFormsListContent(); // Par défaut liste d'individus
+        return _buildFormsListContent();
     }
   }
 
@@ -481,39 +509,29 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
   // =====================================================================
 
   Widget _buildFormsListContent() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(29.0),
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Liste des individus (${_allForms.length})',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF003D82),
-                ),
-              ),
-              // Indicateur de connexion ajouté ici uniquement
-              ConnectionIndicator(
-                showBackground: true,
-                onTap: () => showConnectionSnackbar(context),
-              ),
-            ],
+          Text(
+            'Liste des individus (${_allForms.length})',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF003D82),
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // ✅ GRILLE DE STATISTIQUES DANS LA LISTE D'INDIVIDUS
+          // GRILLE DE STATISTIQUES
           _buildStatsGrid(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
           if (_isLoadingForms)
-            Center(
+            const Center(
               child: Padding(
-                padding: const EdgeInsets.all(50),
+                padding: EdgeInsets.all(50),
                 child: CircularProgressIndicator(color: Color(0xFF1AB999)),
               ),
             )
@@ -551,110 +569,110 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
               ),
             )
           else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _allForms.length,
-              itemBuilder: (context, index) {
-                final form = _allForms[index];
-                final nom = form.identite['nom'] ?? 'N/A';
-                final prenom = form.identite['prenom'] ?? 'N/A';
-                final region = form.identite['region'] ?? 'Non spécifié';
-                final commune = form.identite['commune'] ?? 'Non spécifié';
-                final dateEnquete = form.metadata['date_enquete'] ?? 'N/A';
+            Expanded(
+              child: ListView.builder(
+                itemCount: _allForms.length,
+                itemBuilder: (context, index) {
+                  final form = _allForms[index];
+                  final nom = form.identite['nom'] ?? 'N/A';
+                  final prenom = form.identite['prenom'] ?? 'N/A';
+                  final region = form.identite['region'] ?? 'Non spécifié';
+                  final commune = form.identite['commune'] ?? 'Non spécifié';
+                  final dateEnquete = form.metadata['date_enquete'] ?? 'N/A';
 
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(0xFF1AB999),
-                      radius: 28,
-                      child: Text(
-                        nom.isNotEmpty ? nom[0].toUpperCase() : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFF1AB999),
+                        radius: 28,
+                        child: Text(
+                          nom.isNotEmpty ? nom[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                    title: Text(
-                      '$nom $prenom',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Color(0xFF003D82),
+                      title: Text(
+                        '$nom $prenom',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Color(0xFF003D82),
+                        ),
                       ),
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.fingerprint, size: 14, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'UUID: ${form.uuid}',
-                                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                                  overflow: TextOverflow.ellipsis,
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.fingerprint, size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'UUID: ${form.uuid}',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  '$region | $commune',
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    '$region | $commune',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Ajouté: $dateEnquete',
                                   style: const TextStyle(fontSize: 12),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Color(0xFF1AB999)),
+                            tooltip: 'Modifier',
+                            onPressed: () => _loadFormByUuid(form.uuid),
                           ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Ajouté: $dateEnquete',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ],
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: 'Supprimer',
+                            onPressed: () => _deleteForm(form.uuid),
                           ),
                         ],
                       ),
+                      isThreeLine: true,
                     ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Color(0xFF1AB999)),
-                          tooltip: 'Modifier',
-                          onPressed: () => _loadFormByUuid(form.uuid),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          tooltip: 'Supprimer',
-                          onPressed: () => _deleteForm(form.uuid),
-                        ),
-                      ],
-                    ),
-                    isThreeLine: true,
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
         ],
       ),
@@ -764,16 +782,16 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
 
   Widget _buildDashboardContent() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(29.0),
+      padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildDashboardHeader(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _buildIdentitySection(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _buildParcelleSection(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _buildContinueSection(),
         ],
       ),
@@ -796,12 +814,6 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const Spacer(),
-          // Indicateur de connexion ajouté ici uniquement
-          ConnectionIndicator(
-            showBackground: false,
-            onTap: () => showConnectionSnackbar(context),
-          ),
-          const SizedBox(width: 12),
           const Text('Progression', style: TextStyle(color: Colors.white)),
           const SizedBox(width: 12),
           Expanded(
@@ -1333,12 +1345,12 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
   }
 
   // =====================================================================
-  // PAGES SYNCHRONISATION ET HISTORIQUE (RESTENT IDENTIQUES)
+  // PAGES SYNCHRONISATION ET HISTORIQUE
   // =====================================================================
 
   Widget _buildSynchronizationContent() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(29.0),
+      padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
