@@ -1,5 +1,5 @@
-name: appli
-description: "A new Flutter project."
+name: kartstat
+description: "Votre description d'application KartStat"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -30,6 +30,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  path_provider: ^2.1.1
+  image_picker: ^1.0.4
+  connectivity_plus: ^5.0.2
+  http: ^1.1.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

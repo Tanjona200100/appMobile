@@ -1,22 +1,31 @@
 import 'package:flutter/material.dart';
-import 'pages/login_screen.dart'; // Importez LoginScreen
+import 'screens/splash_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/offline_screen.dart';
+import 'screens/side_menu.dart';
 
 void main() {
-  runApp(const KarStatApp());
+  runApp(const MyApp());
 }
 
-class KarStatApp extends StatelessWidget {
-  const KarStatApp({Key? key}) : super(key: key);
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'KarStat',
+      title: 'KARTSTAT',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+        useMaterial3: true,
       ),
-      home: const LoginScreen(), // Page de login comme écran initial
+      initialRoute: '/splash',
+      routes: {
+        '/splash': (context) => const SplashScreen(),
+        '/login': (context) => const LoginScreen(),
+        '/offline': (context) => const OfflineScreen(),
+        '/side-menu': (context) => const SideMenu(),
+      },
     );
   }
 }
