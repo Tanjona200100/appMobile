@@ -1,289 +1,228 @@
+// services/unified_storage_service.dart
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../models/form_data.dart';
 
-/// Service de gestion du stockage unifié (tous les formulaires dans un seul fichier JSON)
 class UnifiedStorageService {
-  static const String _mainFileName = 'formulaires_agriculture.json';
+  static const String _formsDirectory = 'forms';
+  static const String _pendingSyncFile = 'pending_sync.json';
 
-  /// Générer un UUID unique
-  String generateUuid(String nom, String prenom) {
-    return '${DateTime.now().millisecondsSinceEpoch}-$nom-$prenom'
-        .replaceAll(' ', '_')
-        .toLowerCase();
-  }
-
-  /// Obtenir le chemin du fichier JSON principal
-  Future<File> _getMainFile() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final projectDir = Directory('${appDir.path}/formulaires_agriculture');
-
-    if (!await projectDir.exists()) {
-      await projectDir.create(recursive: true);
-    }
-
-    return File('${projectDir.path}/$_mainFileName');
-  }
-
-  /// Lire tous les formulaires depuis le fichier JSON
-  Future<Map<String, dynamic>> _readAllForms() async {
-    try {
-      final file = await _getMainFile();
-
-      if (!await file.exists()) {
-        return {};
-      }
-
-      final content = await file.readAsString();
-      if (content.isEmpty) {
-        return {};
-      }
-
-      return jsonDecode(content) as Map<String, dynamic>;
-    } catch (e) {
-      print('Erreur lecture formulaires: $e');
-      return {};
-    }
-  }
-
-  /// Écrire tous les formulaires dans le fichier JSON
-  Future<void> _writeAllForms(Map<String, dynamic> allForms) async {
-    try {
-      final file = await _getMainFile();
-      final jsonData = JsonEncoder.withIndent('  ').convert(allForms);
-      await file.writeAsString(jsonData);
-    } catch (e) {
-      throw Exception('Erreur écriture formulaires: $e');
-    }
-  }
-
-  /// Sauvegarder un nouveau formulaire (ou mettre à jour un existant)
+  /// Sauvegarde les données du formulaire
   Future<String> saveFormData(FormData formData) async {
     try {
-      // Lire tous les formulaires existants
-      final allForms = await _readAllForms();
+      final directory = await getApplicationDocumentsDirectory();
+      final formsDir = Directory('${directory.path}/$_formsDirectory');
 
-      // Ajouter/Mettre à jour le formulaire avec son UUID comme clé
-      allForms[formData.uuid] = formData.toJson();
+      if (!await formsDir.exists()) {
+        await formsDir.create(recursive: true);
+      }
 
-      // Écrire le fichier mis à jour
-      await _writeAllForms(allForms);
+      final file = File('${formsDir.path}/${formData.uuid}.json');
+      final jsonData = jsonEncode(formData.toJson());
+      await file.writeAsString(jsonData);
 
-      final file = await _getMainFile();
       return file.path;
     } catch (e) {
       throw Exception('Erreur sauvegarde formulaire: $e');
     }
   }
 
-  /// Récupérer un formulaire spécifique par UUID
-  Future<FormData?> getFormByUuid(String uuid) async {
-    try {
-      final allForms = await _readAllForms();
-
-      if (!allForms.containsKey(uuid)) {
-        return null;
-      }
-
-      return FormData.fromJson(allForms[uuid] as Map<String, dynamic>);
-    } catch (e) {
-      print('Erreur récupération formulaire: $e');
-      return null;
-    }
-  }
-
-  /// Récupérer tous les formulaires
+  /// Récupère tous les formulaires
   Future<List<FormData>> getAllForms() async {
     try {
-      final allForms = await _readAllForms();
-      final formsList = <FormData>[];
+      final directory = await getApplicationDocumentsDirectory();
+      final formsDir = Directory('${directory.path}/$_formsDirectory');
 
-      allForms.forEach((uuid, data) {
-        try {
-          formsList.add(FormData.fromJson(data as Map<String, dynamic>));
-        } catch (e) {
-          print('Erreur parsing formulaire $uuid: $e');
-        }
-      });
-
-      return formsList;
-    } catch (e) {
-      print('Erreur récupération tous formulaires: $e');
-      return [];
-    }
-  }
-
-  /// Supprimer un formulaire par UUID
-  Future<bool> deleteFormByUuid(String uuid) async {
-    try {
-      final allForms = await _readAllForms();
-
-      if (!allForms.containsKey(uuid)) {
-        return false;
+      if (!await formsDir.exists()) {
+        return [];
       }
 
-      allForms.remove(uuid);
-      await _writeAllForms(allForms);
-      return true;
+      final files = formsDir.listSync();
+      final forms = <FormData>[];
+
+      for (final file in files) {
+        if (file is File && file.path.endsWith('.json')) {
+          try {
+            final content = await file.readAsString();
+            final jsonData = jsonDecode(content);
+            forms.add(FormData.fromJson(jsonData));
+          } catch (e) {
+            print('❌ Erreur lecture fichier ${file.path}: $e');
+          }
+        }
+      }
+
+      // Trier par date (plus récent en premier)
+      forms.sort((a, b) {
+        final dateA = a.metadata['timestamp'] ?? '';
+        final dateB = b.metadata['timestamp'] ?? '';
+        return dateB.compareTo(dateA);
+      });
+
+      return forms;
     } catch (e) {
-      print('Erreur suppression formulaire: $e');
-      return false;
+      throw Exception('Erreur chargement formulaires: $e');
     }
   }
 
-  /// Compter le nombre total de formulaires
-  Future<int> getFormsCount() async {
-    final allForms = await _readAllForms();
-    return allForms.length;
-  }
-
-  /// Rechercher des formulaires par nom/prénom
-  Future<List<FormData>> searchForms(String query) async {
+  /// Récupère un formulaire par UUID
+  Future<FormData?> getFormByUuid(String uuid) async {
     try {
-      final allForms = await getAllForms();
-      final searchQuery = query.toLowerCase();
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/$_formsDirectory/$uuid.json');
 
-      return allForms.where((form) {
-        final nom = (form.identite['nom'] ?? '').toString().toLowerCase();
-        final prenom = (form.identite['prenom'] ?? '').toString().toLowerCase();
-        return nom.contains(searchQuery) || prenom.contains(searchQuery);
-      }).toList();
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final jsonData = jsonDecode(content);
+        return FormData.fromJson(jsonData);
+      }
+      return null;
     } catch (e) {
-      print('Erreur recherche formulaires: $e');
-      return [];
-    }
-  }
-
-  /// Exporter tous les formulaires dans un fichier séparé (backup)
-  Future<String?> exportAllForms() async {
-    try {
-      final allForms = await _readAllForms();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-
-      final appDir = await getApplicationDocumentsDirectory();
-      final backupFile = File('${appDir.path}/backup_formulaires_$timestamp.json');
-
-      final jsonData = JsonEncoder.withIndent('  ').convert(allForms);
-      await backupFile.writeAsString(jsonData);
-
-      return backupFile.path;
-    } catch (e) {
-      print('Erreur export formulaires: $e');
+      print('❌ Erreur récupération formulaire $uuid: $e');
       return null;
     }
   }
 
-  /// Importer des formulaires depuis un fichier de backup
-  Future<bool> importForms(String filePath) async {
+  /// Supprime un formulaire par UUID
+  Future<bool> deleteFormByUuid(String uuid) async {
     try {
-      final importFile = File(filePath);
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/$_formsDirectory/$uuid.json');
 
-      if (!await importFile.exists()) {
-        return false;
+      if (await file.exists()) {
+        await file.delete();
+        await removeFromPendingSync(uuid);
+        return true;
       }
-
-      final content = await importFile.readAsString();
-      final importedForms = jsonDecode(content) as Map<String, dynamic>;
-
-      // Fusionner avec les formulaires existants
-      final allForms = await _readAllForms();
-      allForms.addAll(importedForms);
-
-      await _writeAllForms(allForms);
-      return true;
+      return false;
     } catch (e) {
-      print('Erreur import formulaires: $e');
+      print('❌ Erreur suppression formulaire $uuid: $e');
       return false;
     }
   }
 
-  /// Obtenir les statistiques des formulaires
-  Future<Map<String, dynamic>> getStatistics() async {
-    try {
-      final allForms = await getAllForms();
+  /// Vérifie si un numéro CIN existe déjà
+  Future<bool> cinExists(String numeroCIN) async {
+    if (numeroCIN.isEmpty) return false;
 
-      final Map<String, int> parRegion = {};
-      final Map<String, int> parCommune = {};
-      final Map<String, int> parTypeContrat = {};
-      DateTime? lastDate;
-
-      for (var form in allForms) {
-        // Par région
-        final region = form.identite['region']?.toString() ?? 'Non spécifié';
-        parRegion[region] = (parRegion[region] ?? 0) + 1;
-
-        // Par commune
-        final commune = form.identite['commune']?.toString() ?? 'Non spécifié';
-        parCommune[commune] = (parCommune[commune] ?? 0) + 1;
-
-        // Par type de contrat
-        final typeContrat = form.parcelle['type_contrat']?.toString() ?? 'Non spécifié';
-        parTypeContrat[typeContrat] = (parTypeContrat[typeContrat] ?? 0) + 1;
-
-        // Dernière date
-        if (form.metadata['timestamp'] != null) {
-          final date = DateTime.parse(form.metadata['timestamp']!);
-          if (lastDate == null || date.isAfter(lastDate)) {
-            lastDate = date;
-          }
-        }
-      }
-
-      return {
-        'total': allForms.length,
-        'par_region': parRegion,
-        'par_commune': parCommune,
-        'par_type_contrat': parTypeContrat,
-        'dernier_ajout': lastDate?.toIso8601String(),
-      };
-    } catch (e) {
-      print('Erreur calcul statistiques: $e');
-      return {'total': 0};
-    }
+    final allForms = await getAllForms();
+    return allForms.any((form) {
+      final cin = form.identite['cin'] as Map<String, dynamic>? ?? {};
+      final existingCIN = cin['numero']?.toString().trim() ?? '';
+      return existingCIN.isNotEmpty && existingCIN == numeroCIN.trim();
+    });
   }
 
-  /// Vérifier si un UUID existe déjà
+  /// Vérifie si un UUID existe déjà
   Future<bool> uuidExists(String uuid) async {
-    final allForms = await _readAllForms();
-    return allForms.containsKey(uuid);
+    final allForms = await getAllForms();
+    return allForms.any((form) => form.uuid == uuid);
   }
 
-  /// Nettoyer les doublons (même nom/prénom mais UUID différents)
-  Future<int> cleanDuplicates() async {
+  /// Génère un UUID unique basé sur nom et prénom
+  String generateUuid(String nom, String prenom) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final namePart = '${nom}_${prenom}'.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+    return '${namePart}_$timestamp';
+  }
+
+  /// Récupère les formulaires en attente de synchronisation
+  Future<List<FormData>> getPendingSyncForms() async {
+    final allForms = await getAllForms();
+    return allForms.where((form) {
+      final syncStatus = form.metadata['sync_status']?.toString();
+      return syncStatus == 'pending' || syncStatus == 'offline';
+    }).toList();
+  }
+
+  /// Ajoute un formulaire à la file d'attente de synchronisation
+  Future<void> addToPendingSync(FormData formData) async {
+    formData.metadata['sync_status'] = 'pending';
+    formData.metadata['pending_since'] = DateTime.now().toIso8601String();
+    await saveFormData(formData);
+  }
+
+  /// Retire un formulaire de la file d'attente
+  Future<void> removeFromPendingSync(String uuid) async {
+    final form = await getFormByUuid(uuid);
+    if (form != null) {
+      form.metadata.remove('pending_since');
+      await saveFormData(form);
+    }
+  }
+
+  /// Exporte tous les formulaires
+  Future<String?> exportAllForms() async {
     try {
       final allForms = await getAllForms();
-      final uniqueForms = <String, FormData>{};
-      int duplicatesCount = 0;
+      final exportData = {
+        'export_date': DateTime.now().toIso8601String(),
+        'total_forms': allForms.length,
+        'forms': allForms.map((form) => form.toJson()).toList(),
+      };
 
-      for (var form in allForms) {
-        final key = '${form.identite['nom']}_${form.identite['prenom']}'.toLowerCase();
+      final directory = await getApplicationDocumentsDirectory();
+      final exportFile = File('${directory.path}/forms_export_${DateTime.now().millisecondsSinceEpoch}.json');
+      await exportFile.writeAsString(jsonEncode(exportData));
 
-        if (!uniqueForms.containsKey(key)) {
-          uniqueForms[key] = form;
-        } else {
-          // Garder le plus récent
-          final existingDate = DateTime.parse(uniqueForms[key]!.metadata['timestamp'] ?? '2000-01-01');
-          final currentDate = DateTime.parse(form.metadata['timestamp'] ?? '2000-01-01');
+      return exportFile.path;
+    } catch (e) {
+      print('❌ Erreur export: $e');
+      return null;
+    }
+  }
 
-          if (currentDate.isAfter(existingDate)) {
-            uniqueForms[key] = form;
-          }
-          duplicatesCount++;
-        }
+  /// Nettoie les doublons
+  Future<void> cleanDuplicates() async {
+    final allForms = await getAllForms();
+    final uniqueForms = <String, FormData>{};
+    final seenCINs = <String>{};
+
+    for (final form in allForms) {
+      final cin = form.identite['cin'] as Map<String, dynamic>? ?? {};
+      final numeroCIN = cin['numero']?.toString().trim() ?? '';
+      final uuid = form.uuid;
+
+      bool isDuplicate = false;
+
+      // Vérifier doublon par CIN
+      if (numeroCIN.isNotEmpty && seenCINs.contains(numeroCIN)) {
+        isDuplicate = true;
+        print('🚫 Doublon CIN détecté: $numeroCIN - UUID: $uuid');
       }
 
-      // Reconstruire le fichier avec les formulaires uniques
-      final cleanedForms = <String, dynamic>{};
-      uniqueForms.forEach((key, form) {
-        cleanedForms[form.uuid] = form.toJson();
-      });
+      // Vérifier doublon par UUID
+      if (uniqueForms.containsKey(uuid)) {
+        isDuplicate = true;
+        print('🚫 Doublon UUID détecté: $uuid');
+      }
 
-      await _writeAllForms(cleanedForms);
-      return duplicatesCount;
-    } catch (e) {
-      print('Erreur nettoyage doublons: $e');
-      return 0;
+      if (!isDuplicate) {
+        if (numeroCIN.isNotEmpty) {
+          seenCINs.add(numeroCIN);
+        }
+        uniqueForms[uuid] = form;
+      }
     }
+
+    // Sauvegarder les formulaires uniques
+    final directory = await getApplicationDocumentsDirectory();
+    final formsDir = Directory('${directory.path}/$_formsDirectory');
+
+    // Supprimer tous les fichiers existants
+    if (await formsDir.exists()) {
+      await formsDir.delete(recursive: true);
+    }
+
+    // Recréer le dossier et sauvegarder les formulaires uniques
+    await formsDir.create(recursive: true);
+
+    for (final form in uniqueForms.values) {
+      final file = File('${formsDir.path}/${form.uuid}.json');
+      await file.writeAsString(jsonEncode(form.toJson()));
+    }
+
+    print('✅ Nettoyage doublons terminé: ${allForms.length - uniqueForms.length} doublons supprimés');
   }
 }

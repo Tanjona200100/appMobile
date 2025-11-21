@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:kartstat/services/connection_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/offline_screen.dart';
 import 'screens/side_menu.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialiser le service de connexion
+  await ConnectionService().initialize();
+
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {

@@ -14,7 +14,7 @@ class MenuWidget extends StatelessWidget {
     required this.isMenuCollapsed,
     required this.onMenuItemTap,
     required this.onToggleMenu,
-    required this.onLogout,
+    required this.onLogout, required int pendingSyncCount,
   }) : super(key: key);
 
   @override
@@ -37,19 +37,21 @@ class MenuWidget extends StatelessWidget {
             _buildHeader(),
             const SizedBox(height: 30),
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    _buildMenuTile(Icons.dashboard, 'Dashboard', 0),
-                    const SizedBox(height: 8),
-                    _buildMenuTile(Icons.people, 'Liste des individus', 1),
-                    const SizedBox(height: 8),
-                    _buildMenuTile(Icons.sync, 'Synchronisation', 2),
-                    const SizedBox(height: 8),
-                    _buildMenuTile(Icons.history, 'Historiques', 3),
-                  ],
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      _buildMenuTile(Icons.dashboard, 'Dashboard', 0),
+                      const SizedBox(height: 8),
+                      _buildMenuTile(Icons.people, 'Liste des individus', 1),
+                      const SizedBox(height: 8),
+                      _buildMenuTile(Icons.sync, 'Synchronisation', 2),
+                      const SizedBox(height: 8),
+                      _buildMenuTile(Icons.history, 'Historiques', 3),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -113,7 +115,7 @@ class MenuWidget extends StatelessWidget {
       onTap: () => onMenuItemTap(index),
       borderRadius: BorderRadius.circular(30),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         margin: const EdgeInsets.symmetric(vertical: 4),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF1AB999) : const Color(0xFF8E99AB),
@@ -121,19 +123,21 @@ class MenuWidget extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white, size: 24),
-            const SizedBox(width: 16),
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.white, size: 20),
+            const Icon(Icons.chevron_right, color: Colors.white, size: 18),
           ],
         ),
       ),
@@ -173,18 +177,22 @@ class MenuWidget extends StatelessWidget {
                             style: TextStyle(
                                 color: Color(0xFF333333),
                                 fontSize: 13,
-                                fontWeight: FontWeight.w600)),
+                                fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis),
                         Text('Profil paramètres',
                             style: TextStyle(
                               color: Color(0xFF8E99AB),
                               fontSize: 11,
-                            )),
+                            ),
+                            overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.settings,
                         color: Color(0xFF8E99AB), size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: () {},
                   ),
                 ],
@@ -195,25 +203,26 @@ class MenuWidget extends StatelessWidget {
               onTap: onLogout,
               borderRadius: BorderRadius.circular(30),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: const Color(0xFF8E99AB),
                   borderRadius: BorderRadius.circular(30),
                 ),
                 child: Row(
                   children: const [
-                    Icon(Icons.logout, color: Colors.white, size: 24),
+                    Icon(Icons.logout, color: Colors.white, size: 22),
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         'Se déconnecter',
                         style: TextStyle(
                             color: Colors.white,
-                            fontSize: 15,
+                            fontSize: 13,
                             fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: Colors.white, size: 20),
+                    Icon(Icons.chevron_right, color: Colors.white, size: 18),
                   ],
                 ),
               ),

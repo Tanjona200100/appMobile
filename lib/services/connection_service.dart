@@ -1,152 +1,225 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
-// Ajout des imports Flutter manquants
-import 'package:flutter/material.dart';
 
+/// Service de gestion de la connexion Internet avec détection intelligente
 class ConnectionService {
   static final ConnectionService _instance = ConnectionService._internal();
   factory ConnectionService() => _instance;
   ConnectionService._internal();
 
   final Connectivity _connectivity = Connectivity();
+  final StreamController<Map<String, dynamic>> _connectionController =
+  StreamController<Map<String, dynamic>>.broadcast();
+
+  Stream<Map<String, dynamic>> get connectionStream => _connectionController.stream;
+
+  bool _hasInternet = false;
+  bool _isMobileData = false;
   ConnectivityResult _connectionType = ConnectivityResult.none;
-  bool _hasInternetPlan = false;
-  bool _isChecking = false;
+  DateTime? _lastCheckTime;
 
-  // Getters pour l'état actuel
-  ConnectivityResult get connectionType => _connectionType;
-  bool get hasInternetPlan => _hasInternetPlan;
-  bool get isChecking => _isChecking;
-  bool get isMobileData => _connectionType == ConnectivityResult.mobile;
-  bool get isWifi => _connectionType == ConnectivityResult.wifi;
+  // Configuration
+  static const Duration _checkInterval = Duration(seconds: 30);
+  static const List<String> _testUrls = [
+    'https://www.google.com',
+    'https://www.cloudflare.com',
+    'https://1.1.1.1',
+  ];
 
-  // Stream pour écouter les changements
-  Stream<Map<String, dynamic>> get connectionStream async* {
-    // Émettre l'état initial
-    final initialStatus = await getCurrentStatus();
-    yield initialStatus;
+  Timer? _periodicCheckTimer;
 
-    // Écouter les changements
-    await for (final result in _connectivity.onConnectivityChanged) {
-      final newStatus = await _updateStatus(result);
-      yield newStatus;
-    }
+  /// Initialiser le service de connexion
+  Future<void> initialize() async {
+    // Vérifier le statut initial
+    await _checkConnection();
+
+    // Écouter les changements de connectivité
+    _connectivity.onConnectivityChanged.listen(_onConnectivityChanged);
+
+    // Démarrer les vérifications périodiques
+    _startPeriodicCheck();
   }
 
-  // Obtenir le statut actuel
-  Future<Map<String, dynamic>> getCurrentStatus() async {
-    await _checkConnectionType();
-    await _testInternetAccess();
-
-    return _buildStatusMap();
+  /// Vérifier périodiquement la connexion
+  void _startPeriodicCheck() {
+    _periodicCheckTimer?.cancel();
+    _periodicCheckTimer = Timer.periodic(_checkInterval, (_) async {
+      await _checkConnection(notify: false);
+    });
   }
 
-  // Vérifier le type de connexion
-  Future<void> _checkConnectionType() async {
-    try {
-      final result = await _connectivity.checkConnectivity();
-      _connectionType = result;
-    } catch (e) {
-      _connectionType = ConnectivityResult.none;
-    }
-  }
-
-  // Tester l'accès internet
-  Future<void> _testInternetAccess() async {
-    if (_isChecking) return;
-
-    _isChecking = true;
-
-    bool hasAccess = false;
-    final testServers = ['google.com', 'cloudflare.com', 'github.com'];
-
-    for (final server in testServers) {
-      try {
-        final hasPing = await _testPing(server);
-        if (hasPing) {
-          final hasHttp = await _testHttpAccess('https://$server');
-          if (hasHttp) {
-            hasAccess = true;
-            break;
-          }
-        }
-      } catch (e) {
-        // Continuer avec le serveur suivant
-      }
-      await Future.delayed(const Duration(milliseconds: 300));
-    }
-
-    _hasInternetPlan = hasAccess;
-    _isChecking = false;
-  }
-
-  // Mettre à jour le statut
-  Future<Map<String, dynamic>> _updateStatus(ConnectivityResult result) async {
+  /// Événement de changement de connectivité
+  Future<void> _onConnectivityChanged(ConnectivityResult result) async {
+    print('🔄 Changement de connectivité détecté: $result');
     _connectionType = result;
-    await _testInternetAccess();
-
-    return _buildStatusMap();
+    await _checkConnection();
   }
 
-  // Construire le map de statut
-  Map<String, dynamic> _buildStatusMap() {
+  /// Vérifier la connexion Internet réelle
+  Future<void> _checkConnection({bool notify = true}) async {
+    final now = DateTime.now();
+
+    // Éviter les vérifications trop fréquentes (minimum 5 secondes entre chaque)
+    if (_lastCheckTime != null &&
+        now.difference(_lastCheckTime!) < const Duration(seconds: 5)) {
+      return;
+    }
+
+    _lastCheckTime = now;
+
+    final previousStatus = _hasInternet;
+
+    // 1. Vérifier la connectivité de base
+    final connectivityResult = await _connectivity.checkConnectivity();
+    _connectionType = connectivityResult;
+
+    if (connectivityResult == ConnectivityResult.none) {
+      _hasInternet = false;
+      _isMobileData = false;
+
+      if (notify && previousStatus != _hasInternet) {
+        _notifyListeners();
+      }
+      return;
+    }
+
+    // 2. Déterminer le type de connexion
+    _isMobileData = connectivityResult == ConnectivityResult.mobile;
+
+    // 3. Tester la connexion Internet réelle
+    _hasInternet = await _testInternetAccess();
+
+    // 4. Notifier les listeners si le statut a changé
+    if (notify && previousStatus != _hasInternet) {
+      print('📡 Statut de connexion: ${_hasInternet ? "EN LIGNE" : "HORS LIGNE"}');
+      _notifyListeners();
+    }
+  }
+
+  /// Tester l'accès Internet réel avec plusieurs URLs de secours
+  Future<bool> _testInternetAccess() async {
+    for (final url in _testUrls) {
+      try {
+        final response = await http.get(Uri.parse(url)).timeout(
+          const Duration(seconds: 5),
+        );
+
+        if (response.statusCode == 200) {
+          return true;
+        }
+      } on SocketException {
+        continue;
+      } on TimeoutException {
+        continue;
+      } on HttpException {
+        continue;
+      } catch (e) {
+        print('⚠️ Erreur test connexion ($url): $e');
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  /// Notifier tous les listeners
+  void _notifyListeners() {
+    if (!_connectionController.isClosed) {
+      _connectionController.add(getCurrentStatusSync());
+    }
+  }
+
+  /// Obtenir le statut actuel de la connexion (synchrone)
+  Map<String, dynamic> getCurrentStatusSync() {
     return {
+      'hasInternetPlan': _hasInternet,
+      'isMobileData': _isMobileData,
       'connectionType': _connectionType,
-      'hasInternetPlan': _hasInternetPlan,
-      'isMobileData': isMobileData,
-      'isWifi': isWifi,
-      'isChecking': _isChecking,
-      'statusText': _getStatusText(),
-      'statusColor': _getStatusColor(),
-      'statusIcon': _getStatusIcon(),
+      'lastCheck': _lastCheckTime?.toIso8601String(),
+      'isWifi': _hasInternet && !_isMobileData,
+      'isOffline': !_hasInternet,
     };
   }
 
-  // Rafraîchir manuellement
-  Future<Map<String, dynamic>> refreshStatus() async {
-    return await getCurrentStatus();
-  }
-
-  // Méthodes de test réseau
-  Future<bool> _testPing(String host) async {
-    try {
-      final result = await InternetAddress.lookup(host);
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } on SocketException catch (_) {
-      return false;
+  /// Obtenir le statut actuel de la connexion (asynchrone avec vérification)
+  Future<Map<String, dynamic>> getCurrentStatus({bool forceCheck = false}) async {
+    if (forceCheck) {
+      await _checkConnection();
     }
+    return getCurrentStatusSync();
   }
 
-  Future<bool> _testHttpAccess(String url) async {
-    try {
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
+  /// Rafraîchir le statut de connexion
+  Future<void> refreshStatus() async {
+    await _checkConnection();
+  }
+
+  /// Vérifier si on a Internet
+  bool get hasInternet => _hasInternet;
+
+  /// Vérifier si on est en données mobiles
+  bool get isMobileData => _isMobileData;
+
+  /// Vérifier si on est en WiFi
+  bool get isWifi => _hasInternet && !_isMobileData;
+
+  /// Vérifier si on est hors ligne
+  bool get isOffline => !_hasInternet;
+
+  /// Type de connexion
+  ConnectivityResult get connectionType => _connectionType;
+
+  /// Attendre que la connexion soit disponible
+  Future<bool> waitForConnection({
+    Duration timeout = const Duration(seconds: 30),
+    Duration checkInterval = const Duration(seconds: 2),
+  }) async {
+    final startTime = DateTime.now();
+
+    while (DateTime.now().difference(startTime) < timeout) {
+      await _checkConnection();
+
+      if (_hasInternet) {
+        return true;
+      }
+
+      await Future.delayed(checkInterval);
     }
+
+    return false;
   }
 
-  // Méthodes d'helpers pour l'UI
-  String _getStatusText() {
-    if (_isChecking) return 'Vérification...';
-    if (!_hasInternetPlan) {
-      return _connectionType == ConnectivityResult.none
-          ? 'Hors ligne'
-          : 'Pas d\'internet';
+  /// Obtenir une description textuelle du statut
+  String getStatusDescription() {
+    if (!_hasInternet) {
+      return 'Hors ligne';
     }
-    return isMobileData ? 'Données mobiles' : 'WiFi';
+
+    if (_isMobileData) {
+      return 'Données mobiles';
+    }
+
+    return 'WiFi';
   }
 
-  Color _getStatusColor() {
-    if (_isChecking) return Colors.blue;
-    if (!_hasInternetPlan) return Colors.red;
-    return isMobileData ? Colors.orange : Colors.green;
+  /// Obtenir une icône appropriée pour le statut
+  String getStatusIcon() {
+    if (!_hasInternet) {
+      return '📵'; // Hors ligne
+    }
+
+    if (_isMobileData) {
+      return '📱'; // Données mobiles
+    }
+
+    return '📶'; // WiFi
   }
 
-  IconData _getStatusIcon() {
-    if (_isChecking) return Icons.search;
-    if (!_hasInternetPlan) return Icons.wifi_off;
-    return isMobileData ? Icons.network_cell : Icons.wifi;
+  /// Nettoyer les ressources
+  void dispose() {
+    _periodicCheckTimer?.cancel();
+    _connectionController.close();
   }
 }

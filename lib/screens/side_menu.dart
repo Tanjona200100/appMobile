@@ -16,6 +16,7 @@ import '../widgets/form_widgets.dart';
 import 'continue_screen.dart';
 import '../utils/connection_mixin.dart';
 
+/// Classe principale représentant le menu latéral et le dashboard
 class SideMenu extends StatefulWidget {
   const SideMenu({Key? key}) : super(key: key);
 
@@ -23,11 +24,16 @@ class SideMenu extends StatefulWidget {
   State<SideMenu> createState() => _SideMenuState();
 }
 
+/// Classe d'état pour gérer l'interface principale avec menu latéral et contenu
 class _SideMenuState extends State<SideMenu> with ConnectionMixin {
-  int _selectedIndex = 0; // 0: Liste d'individus, 1: Dashboard, 2: Synchronisation, 3: Historique
-  bool _isMenuCollapsed = false;
+  int _selectedIndex = 0;
+  bool _isMenuCollapsed = true;
+  bool _isMenuOverlay = false;
+  final double _menuWidth = 98.0;
+  final double _expandedMenuWidth = 250.0;
+  final double _dashboardWidth = 702.0;
 
-  // Services
+  // Services et contrôleurs
   final FormControllers _controllers = FormControllers();
   final ImageManager _imageManager = ImageManager();
   final UnifiedStorageService _storageService = UnifiedStorageService();
@@ -36,13 +42,17 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
 
   // Configuration
   bool _autoSyncEnabled = true;
-
-  // Variable pour le type de contrat
   String _typeContrat = 'Co-gestion';
 
-  // Liste des formulaires
+  // Données des formulaires
   List<FormData> _allForms = [];
   bool _isLoadingForms = false;
+
+  // File d'attente pour la synchronisation hors ligne
+  List<FormData> _pendingSyncForms = [];
+  bool _isSyncing = false;
+  int _currentSyncProgress = 0;
+  int _totalSyncItems = 0;
 
   // Statistiques pour le dashboard
   Map<String, dynamic> _dashboardStats = {
@@ -52,29 +62,90 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     'by_commune': {},
   };
 
+  // Overlay entry pour le menu superposé
+  OverlayEntry? _menuOverlayEntry;
+
   @override
   void initState() {
     super.initState();
-    _loadAllForms();
+    _initializeApp();
+  }
+
+  /// Initialise l'application
+  void _initializeApp() async {
+    await _loadAllForms();
+    await _loadPendingSyncForms();
     _startConnectionListener();
+    _startAutoSyncListener();
   }
 
-  void _startConnectionListener() {
-    // Écoute les changements de connexion pour afficher les popups
-    Connectivity().onConnectivityChanged.listen((result) async {
-      if (result == ConnectivityResult.none) {
-        // Devenu hors ligne
-        _showConnectionPopup(false);
-      } else {
-        // Devenu en ligne - tester l'accès réel
-        final hasRealInternet = await _testInternetAccess();
-        if (hasRealInternet) {
-          _showConnectionPopup(true);
-        }
+/// Démarre l'écoute des changements de connectivité
+  // Extraits à intégrer dans votre fichier side_menu.dart
+
+// =====================================================================
+// AMÉLIORATION DE LA MÉTHODE _startConnectionListener
+// =====================================================================
+
+/// Démarre l'écoute des changements de connectivité
+void _startConnectionListener() {
+  Connectivity().onConnectivityChanged.listen((result) async {
+    // Sauvegarder l'état précédent
+    final wasOnline = hasInternet;
+
+    if (result == ConnectivityResult.none) {
+      if (mounted) {
+        setState(() {});
       }
-    });
-  }
+      _showConnectionPopup(false);
+    } else {
+      // Tester la connexion Internet réelle
+      final hasRealInternet = await _testInternetAccess();
 
+      if (mounted) {
+        setState(() {});
+      }
+
+      if (hasRealInternet) {
+        _showConnectionPopup(true);
+
+        // AMÉLIORATION: Synchroniser automatiquement si reconnexion détectée
+        if (!wasOnline && _pendingSyncForms.isNotEmpty) {
+          print('🔄 Reconnexion détectée - Lancement de la synchronisation automatique');
+          
+          // Attendre 2 secondes pour que la connexion soit stable
+          await Future.delayed(const Duration(seconds: 2));
+          
+          // Vérifier à nouveau la connexion avant de synchroniser
+          if (hasInternet && mounted) {
+            await _syncPendingForms();
+          }
+        }
+      } else {
+        _showConnectionPopup(false);
+      }
+    }
+  });
+}
+
+  /// Démarre l'écoute pour la synchronisation automatique
+void _startAutoSyncListener() {
+  // Synchronisation toutes les 5 minutes si en ligne et qu'il y a des données en attente
+  Future.delayed(const Duration(minutes: 5), () async {
+    if (!mounted) return;
+    
+    if (_pendingSyncForms.isNotEmpty && hasInternet && !_isSyncing) {
+      print('⏰ Synchronisation périodique automatique...');
+      await _syncPendingForms();
+    }
+    
+    // Relancer le timer
+    if (mounted) {
+      _startAutoSyncListener();
+    }
+  });
+}
+
+  /// Teste l'accès réel à Internet
   Future<bool> _testInternetAccess() async {
     try {
       final response = await http
@@ -86,59 +157,229 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     }
   }
 
+  /// Affiche une popup d'information sur le statut de connexion
   void _showConnectionPopup(bool isOnline) {
-    if (!mounted) return;
+  if (!mounted) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              isOnline ? Icons.wifi : Icons.wifi_off,
-              color: isOnline ? Colors.green : Colors.red,
-            ),
-            SizedBox(width: 8),
-            Text(isOnline ? 'Connexion rétablie' : 'Hors ligne'),
-          ],
-        ),
-        content: Text(
-          isOnline
-              ? 'Votre appareil est maintenant connecté à Internet.'
-              : 'Votre appareil n\'est pas connecté à Internet. Certaines fonctionnalités peuvent être limitées.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) => AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            isOnline ? Icons.wifi : Icons.wifi_off,
+            color: isOnline ? Colors.green : Colors.red,
           ),
+          const SizedBox(width: 8),
+          Text(isOnline ? 'Connexion rétablie' : 'Hors ligne'),
         ],
       ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isOnline
+                ? 'Votre appareil est maintenant connecté à Internet.'
+                : 'Votre appareil n\'est pas connecté à Internet. Les données seront sauvegardées localement.',
+          ),
+          if (isOnline && _pendingSyncForms.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_pendingSyncForms.length} formulaire(s) en attente de synchronisation',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('OK'),
+        ),
+        if (isOnline && _pendingSyncForms.isNotEmpty)
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _syncPendingForms();
+            },
+            icon: const Icon(Icons.sync, size: 16),
+            label: const Text('Synchroniser maintenant'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1AB999),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+  /// Gère le toggle du menu
+  void _toggleMenu() {
+    setState(() {
+      if (_isMenuCollapsed) {
+        // Ouvrir le menu en mode overlay
+        _isMenuOverlay = true;
+        _isMenuCollapsed = false;
+        _showMenuOverlay();
+      } else {
+        // Fermer le menu
+        _isMenuOverlay = false;
+        _isMenuCollapsed = true;
+        _hideMenuOverlay();
+      }
+    });
+  }
+
+  /// Affiche le menu en overlay
+  void _showMenuOverlay() {
+    if (_menuOverlayEntry != null) {
+      _menuOverlayEntry!.remove();
+    }
+
+    _menuOverlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        left: 0,
+        top: 0,
+        bottom: 0,
+        child: GestureDetector(
+          onTap: () {
+            // Fermer le menu si on clique à côté
+            _toggleMenu();
+          },
+          child: Container(
+            color: Colors.transparent,
+            width: MediaQuery.of(context).size.width,
+            child: Row(
+              children: [
+                // Menu étendu
+                Material(
+                  color: Colors.white,
+                  elevation: 8,
+                  child: Container(
+                    width: _expandedMenuWidth,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(2, 0),
+                        ),
+                      ],
+                    ),
+                    child: MenuWidget(
+                      selectedIndex: _selectedIndex,
+                      isMenuCollapsed: false,
+                      onMenuItemTap: (index) {
+                        setState(() => _selectedIndex = index);
+                        _hideMenuOverlay();
+                        _isMenuCollapsed = true;
+                        _isMenuOverlay = false;
+                      },
+                      onToggleMenu: _toggleMenu,
+                      onLogout: () {},
+                      pendingSyncCount: _pendingSyncForms.length,
+                    ),
+                  ),
+                ),
+                // Zone transparente pour fermer le menu
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      _toggleMenu();
+                    },
+                    child: Container(
+                      color: Colors.transparent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
+
+    Overlay.of(context).insert(_menuOverlayEntry!);
+  }
+
+  /// Cache le menu overlay
+  void _hideMenuOverlay() {
+    if (_menuOverlayEntry != null) {
+      _menuOverlayEntry!.remove();
+      _menuOverlayEntry = null;
+    }
   }
 
   @override
-  void onConnectionStatusChanged(Map<String, dynamic> status) {
-    // On n'utilise plus le badge, seulement les popups
-  }
+  void onConnectionStatusChanged(Map<String, dynamic> status) {}
 
   @override
   void dispose() {
     _controllers.dispose();
+    _hideMenuOverlay();
     super.dispose();
   }
 
-  // =====================================================================
-  // CHARGEMENT DES DONNÉES
-  // =====================================================================
-
+  /// Charge tous les formulaires depuis le stockage local
   Future<void> _loadAllForms() async {
     setState(() => _isLoadingForms = true);
     try {
       final forms = await _storageService.getAllForms();
+
+      // CORRECTION : Éviter les doublons basés sur le numéro CIN et UUID
+      final uniqueForms = <String, FormData>{};
+      final seenCINs = <String>{};
+      final seenUUIDs = <String>{};
+
+      for (var form in forms) {
+        final cin = form.identite['cin'] as Map<String, dynamic>? ?? {};
+        final numeroCIN = cin['numero']?.toString().trim() ?? '';
+        final uuid = form.uuid;
+
+        // Vérifier les doublons
+        bool isDuplicate = false;
+
+        if (numeroCIN.isNotEmpty) {
+          if (seenCINs.contains(numeroCIN)) {
+            isDuplicate = true;
+          } else {
+            seenCINs.add(numeroCIN);
+          }
+        }
+
+        if (seenUUIDs.contains(uuid)) {
+          isDuplicate = true;
+        } else {
+          seenUUIDs.add(uuid);
+        }
+
+        // Ajouter uniquement si pas de doublon
+        if (!isDuplicate) {
+          uniqueForms[uuid] = form;
+        }
+      }
+
       setState(() {
-        _allForms = forms;
+        _allForms = uniqueForms.values.toList();
         _isLoadingForms = false;
       });
       _loadDashboardStats();
@@ -148,6 +389,114 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     }
   }
 
+  /// Charge les formulaires en attente de synchronisation
+  Future<void> _loadPendingSyncForms() async {
+    try {
+      final pendingForms = await _storageService.getPendingSyncForms();
+      setState(() {
+        _pendingSyncForms = pendingForms;
+      });
+    } catch (e) {
+      print('Erreur chargement formulaires en attente: $e');
+    }
+  }
+
+  /// Synchronise les formulaires en attente avec progression
+  Future<void> _syncPendingForms() async {
+  if (_pendingSyncForms.isEmpty) {
+    _showSnackBar('Aucun formulaire en attente', Colors.blue);
+    return;
+  }
+
+  // Vérifier la connexion Internet avant de synchroniser
+  if (!hasInternet) {
+    _showSnackBar('Pas de connexion Internet. Synchronisation impossible.', Colors.orange);
+    return;
+  }
+
+  // Éviter les synchronisations simultanées
+  if (_isSyncing) {
+    _showSnackBar('Synchronisation déjà en cours...', Colors.orange);
+    return;
+  }
+
+  setState(() {
+    _isSyncing = true;
+    _currentSyncProgress = 0;
+    _totalSyncItems = _pendingSyncForms.length;
+  });
+
+  _showSnackBar('Synchronisation de ${_pendingSyncForms.length} formulaire(s) en cours...', Colors.blue);
+
+  try {
+    // Utiliser la nouvelle méthode avec gestion de progression
+    final result = await _autoSyncService.syncMultipleForms(
+      List.from(_pendingSyncForms),
+      onProgress: (current, total) {
+        if (mounted) {
+          setState(() {
+            _currentSyncProgress = current;
+            _totalSyncItems = total;
+          });
+        }
+      },
+    );
+
+    setState(() {
+      _isSyncing = false;
+    });
+
+    if (result['success'] == true) {
+      final successCount = result['success_count'] ?? 0;
+      final failureCount = result['failure_count'] ?? 0;
+      final duplicateCount = result['duplicate_count'] ?? 0;
+
+      // Retirer les formulaires synchronisés avec succès de la liste en attente
+      final failedUuids = result['failed_uuids'] as List<String>? ?? [];
+
+      for (var form in List.from(_pendingSyncForms)) {
+        if (!failedUuids.contains(form.uuid)) {
+          // Mise à jour du statut
+          form.metadata['sync_status'] = 'synced';
+          form.metadata['synced_at'] = DateTime.now().toIso8601String();
+          form.metadata.remove('pending_since');
+
+          await _storageService.saveFormData(form);
+          await _storageService.removeFromPendingSync(form.uuid);
+
+          setState(() {
+            _pendingSyncForms.removeWhere((f) => f.uuid == form.uuid);
+          });
+        }
+      }
+
+      // Message de résultat
+      if (successCount > 0) {
+        _showSnackBar('✅ $successCount formulaire(s) synchronisé(s) avec succès!', Colors.green);
+      }
+
+      if (duplicateCount > 0) {
+        _showSnackBar('ℹ️ $duplicateCount formulaire(s) déjà sur le serveur', Colors.blue);
+      }
+
+      if (failureCount > 0) {
+        _showSnackBar('⚠️ $failureCount formulaire(s) n\'ont pas pu être synchronisés', Colors.orange);
+      }
+
+      await _loadAllForms();
+    } else {
+      _showSnackBar('❌ Erreur de synchronisation', Colors.red);
+    }
+  } catch (e) {
+    setState(() {
+      _isSyncing = false;
+    });
+    _showSnackBar('❌ Erreur synchronisation: $e', Colors.red);
+    print('Erreur globale de synchronisation: $e');
+  }
+}
+
+  /// Calcule les statistiques pour le dashboard
   Future<void> _loadDashboardStats() async {
     try {
       final today = DateTime.now().toString().split(' ')[0];
@@ -156,16 +505,11 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
       Map<String, int> byCommune = {};
 
       for (var form in _allForms) {
-        // Compter les formulaires d'aujourd'hui
         if (form.metadata['date_enquete'] == today) {
           todayForms++;
         }
-
-        // Statistiques par région
         final region = form.identite['region'] ?? 'Non spécifié';
         byRegion[region] = (byRegion[region] ?? 0) + 1;
-
-        // Statistiques par commune
         final commune = form.identite['commune'] ?? 'Non spécifié';
         byCommune[commune] = (byCommune[commune] ?? 0) + 1;
       }
@@ -183,106 +527,173 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     }
   }
 
-  // =====================================================================
-  // MÉTHODES DE SAUVEGARDE
-  // =====================================================================
-
+  /// Sauvegarde les données du formulaire localement
   Future<void> _saveFormDataLocally() async {
-    try {
-      if (!_controllers.validate()) {
-        _showSnackBar(
-          'Veuillez remplir les champs obligatoires (Nom, Prénom)',
-          Colors.orange,
-        );
-        return;
-      }
-
-      final uuid = _storageService.generateUuid(
-        _controllers.nom.text,
-        _controllers.prenom.text,
+  try {
+    if (!_controllers.validate()) {
+      _showSnackBar(
+        'Veuillez remplir les champs obligatoires (Nom, Prénom)',
+        Colors.orange,
       );
+      return;
+    }
 
-      if (await _storageService.uuidExists(uuid)) {
-        _showSnackBar('UUID en conflit, réessayez', Colors.orange);
+    // Vérifier si le numéro CIN existe déjà
+    final numeroCIN = _controllers.numeroCIN.text.trim();
+    if (numeroCIN.isNotEmpty) {
+      final cinExists = await _storageService.cinExists(numeroCIN);
+      if (cinExists) {
+        _showSnackBar('⚠️ Ce numéro CIN existe déjà dans la base de données', Colors.orange);
         return;
       }
-
-      final formData = _collectFormData(uuid);
-      final filePath = await _storageService.saveFormData(formData);
-
-      // Synchronisation automatique seulement si connecté
-      if (_autoSyncEnabled && hasInternet) {
-        await _autoSyncService.autoSyncAfterSave(formData);
-      }
-
-      final _ = await _imageManager.saveImagesToAppDirectory(uuid);
-      final appDir = await getApplicationDocumentsDirectory();
-      await _curlGenerator.generateCurlCommand(uuid, appDir.path, _imageManager);
-
-      await _loadAllForms();
-      _showSuccessDialog(filePath, formData);
-    } catch (e) {
-      _showSnackBar('Erreur sauvegarde: $e', Colors.red);
     }
-  }
 
+    final uuid = _storageService.generateUuid(
+      _controllers.nom.text,
+      _controllers.prenom.text,
+    );
+
+    if (await _storageService.uuidExists(uuid)) {
+      _showSnackBar('UUID en conflit, réessayez', Colors.orange);
+      return;
+    }
+
+    final formData = _collectFormData(uuid);
+
+    // Sauvegarde locale (toujours en premier)
+    await _storageService.saveFormData(formData);
+
+    // Sauvegarde des images
+    await _imageManager.saveImagesToAppDirectory(uuid);
+    final appDir = await getApplicationDocumentsDirectory();
+    await _curlGenerator.generateCurlCommand(uuid, appDir.path, _imageManager);
+
+    // LOGIQUE DE SYNCHRONISATION INTELLIGENTE
+    if (hasInternet && _autoSyncEnabled) {
+      // Mode en ligne : tentative de sync immédiate
+      _showSnackBar('📡 Synchronisation en cours...', Colors.blue);
+
+      try {
+        final syncResult = await _autoSyncService.syncFormToServer(formData);
+
+        if (syncResult == true) {
+          // Succès de la synchronisation
+          formData.metadata['sync_status'] = 'synced';
+          formData.metadata['synced_at'] = DateTime.now().toIso8601String();
+          await _storageService.saveFormData(formData);
+
+          _showSnackBar('✅ Formulaire sauvegardé et synchronisé!', Colors.green);
+        } else {
+          // Échec de sync : ajouter à la file d'attente
+          formData.metadata['sync_status'] = 'pending';
+          formData.metadata['pending_since'] = DateTime.now().toIso8601String();
+          await _storageService.addToPendingSync(formData);
+
+          setState(() {
+            _pendingSyncForms.add(formData);
+          });
+
+          _showSnackBar('⏳ Formulaire sauvegardé, synchronisation en attente', Colors.orange);
+        }
+      } catch (syncError) {
+        // Erreur de synchronisation : mise en file d'attente
+        print('Erreur de synchronisation: $syncError');
+
+        formData.metadata['sync_status'] = 'pending';
+        formData.metadata['pending_since'] = DateTime.now().toIso8601String();
+        formData.metadata['sync_error'] = syncError.toString();
+
+        await _storageService.addToPendingSync(formData);
+
+        setState(() {
+          _pendingSyncForms.add(formData);
+        });
+
+        _showSnackBar('⏳ Formulaire sauvegardé, synchronisation en attente', Colors.orange);
+      }
+    } else {
+      // Mode hors ligne : sauvegarde uniquement locale
+      formData.metadata['sync_status'] = 'offline';
+      formData.metadata['pending_since'] = DateTime.now().toIso8601String();
+
+      await _storageService.addToPendingSync(formData);
+
+      setState(() {
+        _pendingSyncForms.add(formData);
+      });
+
+      _showSnackBar('💾 Formulaire sauvegardé localement (hors ligne)', Colors.orange);
+    }
+
+    await _loadAllForms();
+    _showSuccessDialog(formData.uuid, formData);
+
+    // Vider le formulaire après sauvegarde
+    _resetForm();
+
+  } catch (e) {
+    _showSnackBar('❌ Erreur sauvegarde: $e', Colors.red);
+    print('Erreur complète de sauvegarde: $e');
+  }
+}
+
+  /// Collecte les données du formulaire dans un objet FormData
   FormData _collectFormData(String uuid) {
     return FormData(
       uuid: uuid,
       identite: {
-        'nom': _controllers.nom.text,
-        'prenom': _controllers.prenom.text,
-        'surnom': _controllers.surnom.text,
-        'sexe': _controllers.sexe.text,
-        'date_naissance': _controllers.dateNaissance.text,
-        'lieu_naissance': _controllers.lieuNaissance.text,
-        'statut_matrimonial': _controllers.statutMatrimonial.text,
-        'nombre_enfants': _controllers.nombreEnfants.text,
-        'nombre_personnes_charge': _controllers.nombrePersonnesCharge.text,
-        'nom_pere': _controllers.nomPere.text,
-        'nom_mere': _controllers.nomMere.text,
-        'metier': _controllers.metier.text,
-        'activites_complementaires': _controllers.activitesComplementaires.text,
-        'adresse': _controllers.adresse.text,
-        'region': _controllers.region.text,
-        'commune': _controllers.commune.text,
-        'fokontany': _controllers.fokontany.text,
-        'telephone1': _controllers.telephone1.text,
-        'telephone2': _controllers.telephone2.text,
+        'nom': _controllers.nom.text.trim(),
+        'prenom': _controllers.prenom.text.trim(),
+        'surnom': _controllers.surnom.text.trim(),
+        'sexe': _controllers.sexe.text.trim(),
+        'date_naissance': _controllers.dateNaissance.text.trim(),
+        'lieu_naissance': _controllers.lieuNaissance.text.trim(),
+        'statut_matrimonial': _controllers.statutMatrimonial.text.trim(),
+        'nombre_enfants': _controllers.nombreEnfants.text.trim(),
+        'nombre_personnes_charge': _controllers.nombrePersonnesCharge.text.trim(),
+        'nom_pere': _controllers.nomPere.text.trim(),
+        'nom_mere': _controllers.nomMere.text.trim(),
+        'metier': _controllers.metier.text.trim(),
+        'activites_complementaires': _controllers.activitesComplementaires.text.trim(),
+        'adresse': _controllers.adresse.text.trim(),
+        'region': _controllers.region.text.trim(),
+        'commune': _controllers.commune.text.trim(),
+        'fokontany': _controllers.fokontany.text.trim(),
+        'telephone1': _controllers.telephone1.text.trim(),
+        'telephone2': _controllers.telephone2.text.trim(),
         'cin': {
-          'numero': _controllers.numeroCIN.text,
-          'date_delivrance': _controllers.dateDelivrance.text,
+          'numero': _controllers.numeroCIN.text.trim(),
+          'date_delivrance': _controllers.dateDelivrance.text.trim(),
         }
       },
       parcelle: {
-        'latitude': _controllers.latitude.text,
-        'longitude': _controllers.longitude.text,
-        'altitude': _controllers.altitude.text,
-        'precision': _controllers.precision.text,
+        'latitude': _controllers.latitude.text.trim(),
+        'longitude': _controllers.longitude.text.trim(),
+        'altitude': _controllers.altitude.text.trim(),
+        'precision': _controllers.precision.text.trim(),
         'type_contrat': _typeContrat,
       },
       metadata: {
         'date_enquete': DateTime.now().toString().split(' ')[0],
         'timestamp': DateTime.now().toIso8601String(),
         'version': '1.0',
-        'agent': 'Nom de l\'agent'
+        'agent': 'Nom de l\'agent',
+        'sync_status': hasInternet ? 'pending' : 'offline'
       },
     );
   }
 
+  /// Réinitialise le formulaire
   void _resetForm() {
     setState(() {
       _controllers.clear();
       _imageManager.clear();
       _typeContrat = 'Co-gestion';
     });
-    _showSnackBar('Formulaire réinitialisé', Colors.blue);
+    _showSnackBar('🔄 Formulaire réinitialisé', Colors.blue);
   }
 
-  // =====================================================================
-  // GESTION DES FORMULAIRES
-  // =====================================================================
-
+  /// Charge un formulaire par son UUID
   Future<void> _loadFormByUuid(String uuid) async {
     try {
       final form = await _storageService.getFormByUuid(uuid);
@@ -322,15 +733,16 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
 
       setState(() {
         _typeContrat = form.parcelle['type_contrat'] ?? 'Co-gestion';
-        _selectedIndex = 1; // Rediriger vers le Dashboard (nouveau formulaire)
+        _selectedIndex = 1;
       });
 
-      _showSnackBar('Formulaire chargé', Colors.green);
+      _showSnackBar('✅ Formulaire chargé', Colors.green);
     } catch (e) {
-      _showSnackBar('Erreur chargement: $e', Colors.red);
+      _showSnackBar('❌ Erreur chargement: $e', Colors.red);
     }
   }
 
+  /// Supprime un formulaire par son UUID
   Future<void> _deleteForm(String uuid) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -354,60 +766,74 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     if (confirm == true) {
       final success = await _storageService.deleteFormByUuid(uuid);
       if (success) {
+        setState(() {
+          _pendingSyncForms.removeWhere((form) => form.uuid == uuid);
+        });
+        await _storageService.removeFromPendingSync(uuid);
         await _loadAllForms();
-        _showSnackBar('Formulaire supprimé', Colors.green);
+        _showSnackBar('✅ Formulaire supprimé', Colors.green);
       } else {
-        _showSnackBar('Erreur suppression', Colors.red);
+        _showSnackBar('❌ Erreur suppression', Colors.red);
       }
     }
   }
 
+  /// Exporte toutes les données
   Future<void> _exportAllData() async {
     try {
       final path = await _storageService.exportAllForms();
       if (path != null) {
-        _showSnackBar('Export réussi: $path', Colors.green);
+        _showSnackBar('✅ Export réussi: $path', Colors.green);
       } else {
-        _showSnackBar('Erreur export', Colors.red);
+        _showSnackBar('❌ Erreur export', Colors.red);
       }
     } catch (e) {
-      _showSnackBar('Erreur export: $e', Colors.red);
+      _showSnackBar('❌ Erreur export: $e', Colors.red);
     }
   }
 
-  // =====================================================================
-  // DIALOGUES ET UI
-  // =====================================================================
-
+  /// Affiche une dialog de succès après sauvegarde
   void _showSuccessDialog(String filePath, FormData formData) {
+    final isPendingSync = _pendingSyncForms.any((form) => form.uuid == formData.uuid);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.check_circle, color: Colors.green),
-            SizedBox(width: 8),
-            Text('Succès'),
+            Icon(isPendingSync ? Icons.schedule : Icons.check_circle,
+                color: isPendingSync ? Colors.orange : Colors.green),
+            const SizedBox(width: 8),
+            Flexible(child: Text(isPendingSync ? 'En attente' : 'Succès')),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('✅ Formulaire sauvegardé!'),
-            const SizedBox(height: 12),
-            Text('UUID: ${formData.uuid}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-            const SizedBox(height: 8),
-            Text('Total: ${_allForms.length}',
-                style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 8),
-            if (!hasInternet)
-              const Text(
-                '⚠️ Données sauvegardées localement (hors ligne)',
-                style: TextStyle(color: Colors.orange, fontSize: 12),
-              ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(isPendingSync
+                  ? '⏳ Formulaire en attente de synchronisation'
+                  : '✅ Formulaire sauvegardé et synchronisé!'),
+              const SizedBox(height: 12),
+              Text('UUID: ${formData.uuid}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              const SizedBox(height: 8),
+              Text('Total: ${_allForms.length}',
+                  style: const TextStyle(color: Colors.grey)),
+              const SizedBox(height: 8),
+              if (isPendingSync)
+                const Text(
+                  '📡 Données sauvegardées localement. Synchronisation automatique dès que la connexion sera disponible.',
+                  style: TextStyle(color: Colors.orange, fontSize: 12),
+                ),
+              if (!hasInternet && !isPendingSync)
+                const Text(
+                  '⚠️ Données sauvegardées localement (hors ligne)',
+                  style: TextStyle(color: Colors.orange, fontSize: 12),
+                ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -418,7 +844,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             onPressed: () {
               final jsonData = JsonEncoder.withIndent('  ').convert(formData.toJson());
               Clipboard.setData(ClipboardData(text: jsonData));
-              _showSnackBar('JSON copié', Colors.green);
+              _showSnackBar('📋 JSON copié', Colors.green);
             },
             child: const Text('Copier JSON'),
           ),
@@ -427,12 +853,18 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     );
   }
 
+  /// Affiche un snackbar avec un message et une couleur
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
+  /// Navigue vers l'écran Continue
   void _navigateToContinue(String title, int continueNumber) {
     Navigator.push(
       context,
@@ -445,56 +877,144 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     );
   }
 
+  /// Gère la sélection d'image
   Future<void> _handleImagePick(String imageType) async {
     try {
       await _imageManager.pickImage(imageType);
       setState(() {});
     } catch (e) {
-      _showSnackBar('Erreur sélection: $e', Colors.red);
+      _showSnackBar('❌ Erreur sélection: $e', Colors.red);
     }
   }
 
+  /// Supprime une image sélectionnée
   void _handleImageRemove(String imageType) {
     setState(() {
       _imageManager.removeImage(imageType);
     });
   }
 
-  // =====================================================================
-  // BUILD PRINCIPAL SANS INDICATEUR DE CONNEXION
-  // =====================================================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // Menu latéral
-          MenuWidget(
-            selectedIndex: _selectedIndex,
-            isMenuCollapsed: _isMenuCollapsed,
-            onMenuItemTap: (index) => setState(() => _selectedIndex = index),
-            onToggleMenu: () => setState(() => _isMenuCollapsed = !_isMenuCollapsed),
-            onLogout: () {},
-          ),
-          // Contenu principal - S'ADAPTE À TOUTE LA TAILLE D'ÉCRAN
-          Expanded(
+          // CONTENU PRINCIPAL - Toujours centré avec largeur fixe et marge pour le menu réduit
+          Positioned(
+            left: _isMenuCollapsed && !_isMenuOverlay ? _menuWidth : 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
             child: Container(
               color: const Color(0xFFF5F7FA),
               child: _buildContent(),
             ),
           ),
+
+          // MENU RÉDUIT (98px) - Superposé avec z-index élevé
+          if (_isMenuCollapsed && !_isMenuOverlay)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: _menuWidth,
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(2, 0),
+                    ),
+                  ],
+                ),
+                child: MenuWidget(
+                  selectedIndex: _selectedIndex,
+                  isMenuCollapsed: true,
+                  onMenuItemTap: (index) => setState(() => _selectedIndex = index),
+                  onToggleMenu: _toggleMenu,
+                  onLogout: () {},
+                  pendingSyncCount: _pendingSyncForms.length,
+                ),
+              ),
+            ),
+
+          // OVERLAY DE SYNCHRONISATION - Le plus haut z-index
+          if (_isSyncing)
+            Positioned(
+              top: 0,
+              left: _isMenuCollapsed && !_isMenuOverlay ? _menuWidth : 0,
+              right: 0,
+              child: _buildSyncProgressOverlay(),
+            ),
         ],
       ),
     );
   }
 
+  /// Construit l'overlay de progression de synchronisation
+  Widget _buildSyncProgressOverlay() {
+    return Material(
+      color: Colors.blue.shade50,
+      elevation: 8,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        width: double.infinity,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.sync, color: Colors.blue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Synchronisation en cours... ($_currentSyncProgress/$_totalSyncItems)',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+                if (_totalSyncItems > 0)
+                  Text(
+                    '${((_currentSyncProgress / _totalSyncItems) * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: _totalSyncItems > 0 ? _currentSyncProgress / _totalSyncItems : 0,
+              backgroundColor: Colors.blue.shade100,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Construit le contenu principal
   Widget _buildContent() {
+    return Center(
+      child: Container(
+        width: _dashboardWidth,
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        child: _buildCurrentPageContent(),
+      ),
+    );
+  }
+
+  /// Construit le contenu de la page actuelle
+  Widget _buildCurrentPageContent() {
     switch (_selectedIndex) {
       case 0:
-        return _buildFormsListContent(); // Liste d'individus
+        return _buildFormsListContent();
       case 1:
-        return _buildDashboardContent(); // Dashboard
+        return _buildDashboardContent();
       case 2:
         return _buildSynchronizationContent();
       case 3:
@@ -505,223 +1025,121 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
   }
 
   // =====================================================================
-  // PAGE 0 - LISTE D'INDIVIDUS AVEC STATISTIQUES
+  // PAGE 0 - LISTE DES INDIVIDUS
   // =====================================================================
 
   Widget _buildFormsListContent() {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(30.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Liste des individus (${_allForms.length})',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF003D82),
-            ),
+          Row(
+            children: [
+              Text(
+                'Liste des individus (${_allForms.length})',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF003D82),
+                ),
+              ),
+              if (_pendingSyncForms.isNotEmpty) ...[
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 14, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${_pendingSyncForms.length} en attente',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const Spacer(),
+              // Indicateur de connexion
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: hasInternet ? Colors.green : Colors.orange,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      hasInternet ? Icons.wifi : Icons.wifi_off,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      hasInternet ? 'En ligne' : 'Hors ligne',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
-
-          // GRILLE DE STATISTIQUES
           _buildStatsGrid(),
           const SizedBox(height: 20),
-
           if (_isLoadingForms)
             const Center(
-              child: Padding(
-                padding: EdgeInsets.all(50),
-                child: CircularProgressIndicator(color: Color(0xFF1AB999)),
-              ),
+              child: CircularProgressIndicator(color: Color(0xFF1AB999)),
             )
           else if (_allForms.isEmpty)
-            Center(
-              child: Column(
-                children: [
-                  const SizedBox(height: 50),
-                  Icon(Icons.folder_open, size: 80, color: Colors.grey[300]),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Aucun formulaire enregistré',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Créez votre premier formulaire dans le Dashboard',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[400]),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _selectedIndex = 1;
-                      });
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Créer un formulaire'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1AB999),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                  ),
-                ],
-              ),
-            )
+            _buildEmptyState()
           else
-            Expanded(
-              child: ListView.builder(
-                itemCount: _allForms.length,
-                itemBuilder: (context, index) {
-                  final form = _allForms[index];
-                  final nom = form.identite['nom'] ?? 'N/A';
-                  final prenom = form.identite['prenom'] ?? 'N/A';
-                  final region = form.identite['region'] ?? 'Non spécifié';
-                  final commune = form.identite['commune'] ?? 'Non spécifié';
-                  final dateEnquete = form.metadata['date_enquete'] ?? 'N/A';
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(16),
-                      leading: CircleAvatar(
-                        backgroundColor: const Color(0xFF1AB999),
-                        radius: 28,
-                        child: Text(
-                          nom.isNotEmpty ? nom[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      title: Text(
-                        '$nom $prenom',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xFF003D82),
-                        ),
-                      ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.fingerprint, size: 14, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    'UUID: ${form.uuid}',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    '$region | $commune',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Ajouté: $dateEnquete',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Color(0xFF1AB999)),
-                            tooltip: 'Modifier',
-                            onPressed: () => _loadFormByUuid(form.uuid),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            tooltip: 'Supprimer',
-                            onPressed: () => _deleteForm(form.uuid),
-                          ),
-                        ],
-                      ),
-                      isThreeLine: true,
-                    ),
-                  );
-                },
-              ),
-            ),
+            _buildFormsList(),
         ],
       ),
     );
   }
 
-  // =====================================================================
-  // GRILLE DE STATISTIQUES
-  // =====================================================================
-
+  /// Construit la grille de statistiques
   Widget _buildStatsGrid() {
-    return GridView(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 2.0,
-      ),
-      children: [
-        _buildStatCard(
-          'Total individus',
-          _dashboardStats['total_forms'].toString(),
-          Icons.people,
-          const Color(0xFF1AB999),
-        ),
-        _buildStatCard(
-          "Aujourd'hui",
-          _dashboardStats['today_forms'].toString(),
-          Icons.today,
-          const Color(0xFF003D82),
-        ),
-        _buildStatCard(
-          'Régions',
-          _dashboardStats['by_region'].length.toString(),
-          Icons.map,
-          const Color(0xFF8E99AB),
-        ),
-        _buildStatCard(
-          'Communes',
-          _dashboardStats['by_commune'].length.toString(),
-          Icons.location_city,
-          const Color(0xFF1AB999),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        int crossAxisCount = 2;
+        if (constraints.maxWidth > 1200) crossAxisCount = 4;
+        else if (constraints.maxWidth > 800) crossAxisCount = 3;
+
+        return GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 2.0,
+          children: [
+            _buildStatCard('Total individus', _dashboardStats['total_forms'].toString(), Icons.people, const Color(0xFF1AB999)),
+            _buildStatCard("Aujourd'hui", _dashboardStats['today_forms'].toString(), Icons.today, const Color(0xFF003D82)),
+            _buildStatCard('Régions', _dashboardStats['by_region'].length.toString(), Icons.map, const Color(0xFF8E99AB)),
+            _buildStatCard('Communes', _dashboardStats['by_commune'].length.toString(), Icons.location_city, const Color(0xFF1AB999)),
+          ],
+        );
+      },
     );
   }
 
+  /// Construit une carte de statistique
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -753,19 +1171,25 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF003D82),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF003D82),
+                    ),
                   ),
                 ),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ],
@@ -776,13 +1200,199 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     );
   }
 
+  Widget _buildEmptyState() {
+    return Container(
+      height: 300,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.folder_open, size: 80, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text(
+              'Aucun formulaire enregistré',
+              style: TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Créez votre premier formulaire dans le Dashboard',
+              style: TextStyle(fontSize: 14, color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _selectedIndex = 1;
+                });
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Créer un formulaire'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1AB999),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormsList() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _allForms.length,
+      itemBuilder: (context, index) {
+        final form = _allForms[index];
+        final isPendingSync = _pendingSyncForms.any((f) => f.uuid == form.uuid);
+        final nom = form.identite['nom'] ?? 'N/A';
+        final prenom = form.identite['prenom'] ?? 'N/A';
+        final region = form.identite['region'] ?? 'Non spécifié';
+        final commune = form.identite['commune'] ?? 'Non spécifié';
+        final dateEnquete = form.metadata['date_enquete'] ?? 'N/A';
+        final cin = form.identite['cin'] as Map<String, dynamic>? ?? {};
+        final numeroCIN = cin['numero'] ?? 'Non renseigné';
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            leading: Stack(
+              children: [
+                CircleAvatar(
+                  backgroundColor: isPendingSync ? Colors.orange : const Color(0xFF1AB999),
+                  radius: 28,
+                  child: Text(
+                    nom.isNotEmpty ? nom[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (isPendingSync)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.orange,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.schedule, size: 12, color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+            title: Row(
+              children: [
+                Text(
+                  '$nom $prenom',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Color(0xFF003D82),
+                  ),
+                ),
+                if (isPendingSync) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.schedule, size: 16, color: Colors.orange),
+                ],
+              ],
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.credit_card, size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'CIN: $numeroCIN',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '$region | $commune',
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Ajouté: $dateEnquete',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      if (isPendingSync) ...[
+                        const SizedBox(width: 8),
+                        const Text(
+                          '• En attente',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Color(0xFF1AB999)),
+                  tooltip: 'Modifier',
+                  onPressed: () => _loadFormByUuid(form.uuid),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  tooltip: 'Supprimer',
+                  onPressed: () => _deleteForm(form.uuid),
+                ),
+              ],
+            ),
+            isThreeLine: true,
+          ),
+        );
+      },
+    );
+  }
+
   // =====================================================================
-  // PAGE 1 - DASHBOARD (FORMULAIRE SEUL)
+  // PAGE 1 - DASHBOARD (FORMULAIRE) - 702px de largeur fixe
   // =====================================================================
 
   Widget _buildDashboardContent() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.all(30.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -811,7 +1421,11 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
           const SizedBox(width: 12),
           const Text(
             'Dashboard - Nouveau formulaire',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const Spacer(),
           const Text('Progression', style: TextStyle(color: Colors.white)),
@@ -841,16 +1455,11 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             ),
           ),
           const SizedBox(width: 12),
-          const Text('32%',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          const Text('32%', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
-
-  // =====================================================================
-  // SECTIONS DU FORMULAIRE (IDENTITÉ, PARCELLE, CONTINUE)
-  // =====================================================================
 
   Widget _buildIdentitySection() {
     return Container(
@@ -893,11 +1502,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Identité',
-                    style: TextStyle(
-                        color: Color(0xFF003D82),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+                const Text('Identité', style: TextStyle(color: Color(0xFF003D82), fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 24),
                 FormWidgets.buildTextField('Nom', _controllers.nom),
                 const SizedBox(height: 20),
@@ -911,25 +1516,13 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
                 const SizedBox(height: 20),
                 FormWidgets.buildTextField('Lieu de naissance', _controllers.lieuNaissance),
                 const SizedBox(height: 32),
-                const Text('Compléments d\'information',
-                    style: TextStyle(
-                        color: Color(0xFF003D82),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+                const Text('Compléments d\'information', style: TextStyle(color: Color(0xFF003D82), fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 24),
                 FormWidgets.buildTextField('Statut matrimonial', _controllers.statutMatrimonial),
                 const SizedBox(height: 20),
-                FormWidgets.buildNumberField(
-                  'Nombre d\'enfants',
-                  _controllers.nombreEnfants,
-                  minValue: 0,
-                ),
+                FormWidgets.buildNumberField('Nombre d\'enfants', _controllers.nombreEnfants, minValue: 0),
                 const SizedBox(height: 20),
-                FormWidgets.buildNumberField(
-                  'Nombre de personnes à charge',
-                  _controllers.nombrePersonnesCharge,
-                  minValue: 0,
-                ),
+                FormWidgets.buildNumberField('Nombre de personnes à charge', _controllers.nombrePersonnesCharge, minValue: 0),
                 const SizedBox(height: 32),
                 FormWidgets.buildTextField('Nom du père', _controllers.nomPere),
                 const SizedBox(height: 20),
@@ -937,14 +1530,9 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
                 const SizedBox(height: 20),
                 FormWidgets.buildTextField('Métier', _controllers.metier),
                 const SizedBox(height: 20),
-                FormWidgets.buildTextField('Activités complémentaires',
-                    _controllers.activitesComplementaires),
+                FormWidgets.buildTextField('Activités complémentaires', _controllers.activitesComplementaires),
                 const SizedBox(height: 32),
-                const Text('Adresse et contact',
-                    style: TextStyle(
-                        color: Color(0xFF003D82),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+                const Text('Adresse et contact', style: TextStyle(color: Color(0xFF003D82), fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 24),
                 FormWidgets.buildTextField('Adresse', _controllers.adresse),
                 const SizedBox(height: 20),
@@ -958,11 +1546,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
                 const SizedBox(height: 20),
                 FormWidgets.buildPhoneField('Numéro téléphone 2', _controllers.telephone2),
                 const SizedBox(height: 32),
-                const Text('Carte d\'identité nationale',
-                    style: TextStyle(
-                        color: Color(0xFF003D82),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+                const Text('Carte d\'identité nationale', style: TextStyle(color: Color(0xFF003D82), fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 24),
                 FormWidgets.buildTextField('Numéro CIN', _controllers.numeroCIN),
                 const SizedBox(height: 20),
@@ -971,21 +1555,11 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
                 Row(
                   children: [
                     Expanded(
-                      child: _buildImageUploadField(
-                        'Photo CIN recto',
-                        'cin_recto',
-                        _imageManager.cinRectoImagePath,
-                        _imageManager.cinRectoImageFile,
-                      ),
+                      child: _buildImageUploadField('Photo CIN recto', 'cin_recto', _imageManager.cinRectoImagePath, _imageManager.cinRectoImageFile),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: _buildImageUploadField(
-                        'Photo CIN verso',
-                        'cin_verso',
-                        _imageManager.cinVersoImagePath,
-                        _imageManager.cinVersoImageFile,
-                      ),
+                      child: _buildImageUploadField('Photo CIN verso', 'cin_verso', _imageManager.cinVersoImagePath, _imageManager.cinVersoImageFile),
                     ),
                   ],
                 ),
@@ -1038,75 +1612,31 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Terrain',
-                    style: TextStyle(
-                        color: Color(0xFF003D82),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+                const Text('Terrain', style: TextStyle(color: Color(0xFF003D82), fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 24),
-                FormWidgets.buildDecimalField(
-                  'Latitude (x,y°)',
-                  _controllers.latitude,
-                  hintText: 'Ex: -18.8792',
-                ),
+                FormWidgets.buildDecimalField('Latitude (x,y°)', _controllers.latitude, hintText: 'Ex: -18.8792'),
                 const SizedBox(height: 20),
-                FormWidgets.buildDecimalField(
-                  'Longitude (x,y°)',
-                  _controllers.longitude,
-                  hintText: 'Ex: 47.5079',
-                ),
+                FormWidgets.buildDecimalField('Longitude (x,y°)', _controllers.longitude, hintText: 'Ex: 47.5079'),
                 const SizedBox(height: 20),
                 FormWidgets.buildNumberField('Altitude (m)', _controllers.altitude),
                 const SizedBox(height: 20),
                 FormWidgets.buildNumberField('Précision (m)', _controllers.precision),
                 const SizedBox(height: 32),
-                const Text('Type de contrat',
-                    style: TextStyle(
-                        color: Color(0xFF003D82),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+                const Text('Type de contrat', style: TextStyle(color: Color(0xFF003D82), fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Expanded(
-                      child: FormWidgets.buildRadioButton(
-                        'Propriétaire',
-                        _typeContrat,
-                            (value) => setState(() => _typeContrat = value!),
-                      ),
-                    ),
+                    Expanded(child: FormWidgets.buildRadioButton('Propriétaire', _typeContrat, (value) => setState(() => _typeContrat = value!))),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: FormWidgets.buildRadioButton(
-                        'Locataire',
-                        _typeContrat,
-                            (value) => setState(() => _typeContrat = value!),
-                      ),
-                    ),
+                    Expanded(child: FormWidgets.buildRadioButton('Locataire', _typeContrat, (value) => setState(() => _typeContrat = value!))),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: FormWidgets.buildRadioButton(
-                        'Co-gestion',
-                        _typeContrat,
-                            (value) => setState(() => _typeContrat = value!),
-                      ),
-                    ),
+                    Expanded(child: FormWidgets.buildRadioButton('Co-gestion', _typeContrat, (value) => setState(() => _typeContrat = value!))),
                   ],
                 ),
                 const SizedBox(height: 24),
-                _buildImageUploadField(
-                  'Photo parcelle',
-                  'parcelle',
-                  _imageManager.parcelleImagePath,
-                  _imageManager.parcelleImageFile,
-                ),
+                _buildImageUploadField('Photo parcelle', 'parcelle', _imageManager.parcelleImagePath, _imageManager.parcelleImageFile),
                 const SizedBox(height: 24),
-                _buildImageUploadField(
-                  'Photo d\'identité',
-                  'portrait',
-                  _imageManager.portraitImagePath,
-                  _imageManager.portraitImageFile,
-                ),
+                _buildImageUploadField('Photo d\'identité', 'portrait', _imageManager.portraitImagePath, _imageManager.portraitImageFile),
               ],
             ),
           ),
@@ -1115,22 +1645,11 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
     );
   }
 
-  Widget _buildImageUploadField(
-      String label,
-      String imageType,
-      String? imagePath,
-      File? imageFile,
-      ) {
+  Widget _buildImageUploadField(String label, String imageType, String? imagePath, File? imageFile) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[700],
-          ),
-        ),
+        Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey[700])),
         const SizedBox(height: 8),
         Container(
           height: 120,
@@ -1143,21 +1662,15 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  imageFile,
-                  width: double.infinity,
-                  height: double.infinity,
-                  fit: BoxFit.cover,
-                ),
+                child: Image.file(imageFile, width: double.infinity, height: double.infinity, fit: BoxFit.cover),
               ),
               Positioned(
-                top: 4,
-                right: 4,
+                top: 4, right: 4,
                 child: CircleAvatar(
-                  radius: 14,
-                  backgroundColor: Colors.red,
+                  radius: 14, backgroundColor: Colors.red,
                   child: IconButton(
                     icon: const Icon(Icons.close, size: 12, color: Colors.white),
+                    padding: EdgeInsets.zero,
                     onPressed: () => _handleImageRemove(imageType),
                   ),
                 ),
@@ -1170,10 +1683,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
               children: [
                 Icon(Icons.camera_alt, color: Colors.grey[400]),
                 const SizedBox(height: 4),
-                Text(
-                  'Ajouter une photo',
-                  style: TextStyle(color: Colors.grey[500]),
-                ),
+                Text('Ajouter une photo', style: TextStyle(color: Colors.grey[500])),
               ],
             ),
           ),
@@ -1231,89 +1741,33 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Liste des continues',
-                    style: TextStyle(
-                        color: Color(0xFF333333),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16)),
+                const Text('Liste des continues', style: TextStyle(color: Color(0xFF333333), fontWeight: FontWeight.w600, fontSize: 16)),
                 const SizedBox(height: 16),
-                FormWidgets.buildContinueItem(
-                  3,
-                  'Riziculture',
-                  'Techniques de culture du riz',
-                  false,
-                  onTap: () => _navigateToContinue('Riziculture', 3),
-                ),
+                FormWidgets.buildContinueItem(3, 'Riziculture', 'Techniques de culture du riz', false, onTap: () => _navigateToContinue('Riziculture', 3)),
                 const Divider(height: 1, color: Color(0xFFE0E0E0)),
-                FormWidgets.buildContinueItem(
-                  4,
-                  'Élevage',
-                  'Pratiques d\'élevage',
-                  false,
-                  onTap: () => _navigateToContinue('Élevage', 4),
-                ),
+                FormWidgets.buildContinueItem(4, 'Élevage', 'Pratiques d\'élevage', false, onTap: () => _navigateToContinue('Élevage', 4)),
                 const Divider(height: 1, color: Color(0xFFE0E0E0)),
-                FormWidgets.buildContinueItem(
-                  5,
-                  'Pêche',
-                  'Techniques de pêche',
-                  false,
-                  onTap: () => _navigateToContinue('Pêche', 5),
-                ),
+                FormWidgets.buildContinueItem(5, 'Pêche', 'Techniques de pêche', false, onTap: () => _navigateToContinue('Pêche', 5)),
                 const Divider(height: 1, color: Color(0xFFE0E0E0)),
-                FormWidgets.buildContinueItem(
-                  6,
-                  'Agriculture vivrière',
-                  'Cultures alimentaires',
-                  true,
-                ),
+                FormWidgets.buildContinueItem(6, 'Agriculture vivrière', 'Cultures alimentaires', true),
                 const Divider(height: 1, color: Color(0xFFE0E0E0)),
-                FormWidgets.buildContinueItem(
-                  7,
-                  'Commerce',
-                  'Activités commerciales',
-                  false,
-                  onTap: () => _navigateToContinue('Commerce', 7),
-                ),
+                FormWidgets.buildContinueItem(7, 'Commerce', 'Activités commerciales', false, onTap: () => _navigateToContinue('Commerce', 7)),
                 const Divider(height: 1, color: Color(0xFFE0E0E0)),
-                FormWidgets.buildContinueItem(
-                  8,
-                  'Artisanat',
-                  'Métiers artisanaux',
-                  true,
-                ),
+                FormWidgets.buildContinueItem(8, 'Artisanat', 'Métiers artisanaux', true),
                 const SizedBox(height: 32),
                 Row(
                   children: [
                     const Icon(Icons.access_time, color: Color(0xFF8E99AB), size: 20),
                     const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Voir historique de modification',
-                        style: TextStyle(
-                          color: Color(0xFF333333),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
+                    const Expanded(child: Text('Voir historique de modification', style: TextStyle(color: Color(0xFF333333), fontSize: 14, fontWeight: FontWeight.w500))),
                     OutlinedButton(
                       onPressed: _resetForm,
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         side: const BorderSide(color: Color(0xFF8E99AB)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text(
-                        'Annuler',
-                        style: TextStyle(
-                          color: Color(0xFF8E99AB),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      child: const Text('Annuler', style: TextStyle(color: Color(0xFF8E99AB), fontSize: 14, fontWeight: FontWeight.w500)),
                     ),
                     const SizedBox(width: 12),
                     ElevatedButton(
@@ -1321,18 +1775,9 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1AB999),
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text(
-                        'Enregistrer',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      child: const Text('Enregistrer', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
                     ),
                   ],
                 ),
@@ -1345,7 +1790,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
   }
 
   // =====================================================================
-  // PAGES SYNCHRONISATION ET HISTORIQUE
+  // PAGE 2 - SYNCHRONISATION AMÉLIORÉE
   // =====================================================================
 
   Widget _buildSynchronizationContent() {
@@ -1354,22 +1799,14 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Gestion des données',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF003D82),
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Stockage local en fichiers JSON',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-          SizedBox(height: 24),
+          const Text('Gestion des données', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
+          const SizedBox(height: 8),
+          const Text('Stockage local en fichiers JSON - Synchronisation automatique', style: TextStyle(fontSize: 14, color: Colors.grey)),
+          const SizedBox(height: 24),
           _buildDataActionsCard(),
-          SizedBox(height: 24),
+          const SizedBox(height: 24),
+          _buildPendingSyncCard(),
+          const SizedBox(height: 24),
           _buildDataStatsCard(),
         ],
       ),
@@ -1378,53 +1815,32 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
 
   Widget _buildDataActionsCard() {
     return Container(
-      padding: EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 2),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Actions',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF003D82),
-            ),
-          ),
-          SizedBox(height: 16),
+          const Text('Actions de synchronisation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
+          const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: _exportAllData,
-            icon: Icon(Icons.download),
-            label: Text('Exporter tous les formulaires'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF1AB999),
-              minimumSize: Size(double.infinity, 50),
-            ),
+            icon: const Icon(Icons.download),
+            label: const Text('Exporter tous les formulaires'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1AB999), minimumSize: const Size(double.infinity, 50)),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () async {
               try {
                 final result = await _autoSyncService.syncAllFromLocalToMaster();
                 if (result['success'] == true) {
-                  _showDialog(
-                    'Synchronisation réussie',
-                    'Total: ${result['total']}\n'
-                        'Insérés: ${result['inserted']}\n'
-                        'Mis à jour: ${result['updated']}\n'
-                        'Ignorés: ${result['skipped']}\n'
-                        'Erreurs: ${result['errors']}',
-                  );
+                  _showDialog('Synchronisation réussie', 'Total: ${result['total']}\nInsérés: ${result['inserted']}\nMis à jour: ${result['updated']}\nIgnorés: ${result['skipped']}\nErreurs: ${result['errors']}');
+                  await _loadAllForms();
+                  await _loadPendingSyncForms();
                 } else {
                   _showSnackBar('Erreur: ${result['error']}', Colors.red);
                 }
@@ -1432,21 +1848,83 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
                 _showSnackBar('Erreur: $e', Colors.red);
               }
             },
-            icon: Icon(Icons.sync),
-            label: Text('Synchroniser vers master'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: Size(double.infinity, 50),
-            ),
+            icon: const Icon(Icons.sync),
+            label: const Text('Synchroniser vers master'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _isSyncing ? null : _syncPendingForms,
+            icon: _isSyncing
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.refresh),
+            label: Text('Synchroniser les en attente (${_pendingSyncForms.length})'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+          ),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _loadAllForms,
-            icon: Icon(Icons.refresh),
-            label: Text('Actualiser la liste'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: Size(double.infinity, 50),
-            ),
+            icon: const Icon(Icons.update),
+            label: const Text('Actualiser la liste'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingSyncCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.schedule, color: Colors.orange),
+              const SizedBox(width: 8),
+              const Text('Formulaires en attente de synchronisation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
+              const Spacer(),
+              if (_pendingSyncForms.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(16)),
+                  child: Text('${_pendingSyncForms.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_pendingSyncForms.isEmpty)
+            const Center(
+              child: Column(
+                children: [
+                  Icon(Icons.check_circle, size: 48, color: Colors.green),
+                  SizedBox(height: 12),
+                  Text('Aucun formulaire en attente', style: TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 8),
+                  Text('Toutes les données sont synchronisées', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (var form in _pendingSyncForms.take(5))
+                  ListTile(
+                    leading: const Icon(Icons.pending, color: Colors.orange),
+                    title: Text('${form.identite['nom']} ${form.identite['prenom']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('UUID: ${form.uuid}', style: const TextStyle(fontSize: 12)),
+                    trailing: Text(form.metadata['date_enquete'] ?? 'Date inconnue', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+                if (_pendingSyncForms.length > 5)
+                  Text('... et ${_pendingSyncForms.length - 5} autres formulaires', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+              ],
+            ),
         ],
       ),
     );
@@ -1454,17 +1932,11 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
 
   Widget _buildDataStatsCard() {
     return Container(
-      padding: EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 2),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1472,25 +1944,19 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Statistiques',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF003D82),
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.refresh),
-                onPressed: _loadAllForms,
-              ),
+              const Text('Statistiques', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
+              IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAllForms),
             ],
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           _buildStatItem('Total formulaires', _allForms.length.toString()),
+          _buildStatItem('Formulaires synchronisés', (_allForms.length - _pendingSyncForms.length).toString()),
+          _buildStatItem('En attente de sync', _pendingSyncForms.length.toString()),
           _buildStatItem('Dernier formulaire', _getLastFormDate()),
           _buildStatItem('Stockage', 'Fichiers JSON'),
-          _buildStatItem('Statut', '✅ Opérationnel'),
+          _buildStatItem('Statut connexion', hasInternet ? '✅ En ligne' : '⚠️ Hors ligne'),
+          if (_isSyncing)
+            _buildStatItem('Progression sync', '$_currentSyncProgress/$_totalSyncItems (${((_currentSyncProgress / _totalSyncItems) * 100).toStringAsFixed(0)}%)'),
         ],
       ),
     );
@@ -1502,20 +1968,8 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[700],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              color: Color(0xFF003D82),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Expanded(child: Text(label, style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w500))),
+          Flexible(child: Text(value, style: const TextStyle(color: Color(0xFF003D82), fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
         ],
       ),
     );
@@ -1533,72 +1987,53 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
       builder: (context) => AlertDialog(
         title: Text(title),
         content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
       ),
     );
   }
 
+  // =====================================================================
+  // PAGE 3 - HISTORIQUE
+  // =====================================================================
+
   Widget _buildHistoryContent() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.history, size: 80, color: Colors.grey[300]),
-          SizedBox(height: 16),
-          Text(
-            'Page Historiques',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF003D82),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20.0),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.history, size: 80, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text('Page Historiques', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
+            const SizedBox(height: 8),
+            const Text('Fonctionnalité à venir', style: TextStyle(fontSize: 16, color: Colors.grey)),
+            const SizedBox(height: 24),
+            Container(
+              constraints: const BoxConstraints(maxWidth: 600),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.info_outline, size: 48, color: Color(0xFF1AB999)),
+                  const SizedBox(height: 16),
+                  const Text('Cette section contiendra :', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
+                  const SizedBox(height: 12),
+                  _buildHistoryFeature('Historique des modifications'),
+                  _buildHistoryFeature('Logs des sauvegardes'),
+                  _buildHistoryFeature('Activités des utilisateurs'),
+                  _buildHistoryFeature('Versions des formulaires'),
+                  _buildHistoryFeature('Journal de synchronisation'),
+                  _buildHistoryFeature('Statistiques d\'utilisation'),
+                ],
+              ),
             ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Fonctionnalité à venir',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          SizedBox(height: 24),
-          Container(
-            padding: EdgeInsets.all(20),
-            margin: EdgeInsets.symmetric(horizontal: 40),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Icon(Icons.info_outline, size: 48, color: Color(0xFF1AB999)),
-                SizedBox(height: 16),
-                Text(
-                  'Cette section contiendra :',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF003D82),
-                  ),
-                ),
-                SizedBox(height: 12),
-                _buildHistoryFeature('Historique des modifications'),
-                _buildHistoryFeature('Logs des sauvegardes'),
-                _buildHistoryFeature('Activités des utilisateurs'),
-                _buildHistoryFeature('Versions des formulaires'),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1608,12 +2043,9 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF1AB999)),
-          SizedBox(width: 8),
-          Text(
-            text,
-            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-          ),
+          const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF1AB999)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 14, color: Colors.grey[700]))),
         ],
       ),
     );

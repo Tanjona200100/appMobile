@@ -29,4 +29,8 @@ class FormData {
       metadata: json['metadata'] ?? {},
     );
   }
+
+  get informationContrat => null;
+
+  get createdAt => null;
 }

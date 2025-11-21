@@ -1,14 +1,25 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/form_data.dart';
 
-/// Service de synchronisation automatique après chaque sauvegarde
+/// Service de synchronisation automatique amélioré
 class AutoSyncService {
   static const String _masterFileName = 'formulaires_master.json';
   static const String _syncLogFileName = 'auto_sync_log.json';
 
+  // URL de votre API backend - À CONFIGURER
+  static const String _apiBaseUrl = 'https://votre-api.com/api';
+  static const String _syncEndpoint = '/formulaires/sync';
+
+  // Configuration de retry
+  static const int _maxRetries = 3;
+  static const Duration _retryDelay = Duration(seconds: 5);
+
   bool _autoSyncEnabled = true;
+  bool _isSyncing = false;
 
   AutoSyncService();
 
@@ -17,46 +28,181 @@ class AutoSyncService {
     _autoSyncEnabled = enabled;
   }
 
+  bool get isSyncing => _isSyncing;
+
   // =====================================================================
-  // SYNCHRONISATION AUTOMATIQUE APRÈS SAUVEGARDE
+  // SYNCHRONISATION VERS LE SERVEUR DISTANT
   // =====================================================================
 
-  /// Synchroniser automatiquement après sauvegarde d'un formulaire
-  Future<Map<String, dynamic>> autoSyncAfterSave(FormData formData) async {
+  /// Synchroniser un formulaire vers le serveur distant
+  Future<bool?> syncFormToServer(FormData formData) async {
     if (!_autoSyncEnabled) {
-      return {
-        'success': false,
-        'reason': 'Auto-sync désactivé',
-      };
+      print('⚠️ Auto-sync désactivé');
+      return false;
     }
 
-    print('🔄 Synchronisation automatique de ${formData.uuid}...');
+    print('📡 Tentative de synchronisation vers le serveur: ${formData.uuid}');
 
-    Map<String, dynamic> result = {
+    int retryCount = 0;
+
+    while (retryCount < _maxRetries) {
+      try {
+        // Préparer les données à envoyer
+        final Map<String, dynamic> payload = {
+          'uuid': formData.uuid,
+          'identite': formData.identite,
+          'parcelle': formData.parcelle,
+          'metadata': formData.metadata,
+          'sync_timestamp': DateTime.now().toIso8601String(),
+        };
+
+        // Envoyer vers le serveur
+        final response = await http.post(
+          Uri.parse('$_apiBaseUrl$_syncEndpoint'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(payload),
+        ).timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            throw TimeoutException('Timeout de connexion au serveur');
+          },
+        );
+
+        // Vérifier la réponse
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          print('✅ Synchronisation réussie: ${formData.uuid}');
+
+          // Logger le succès
+          await _logSyncOperation({
+            'uuid': formData.uuid,
+            'timestamp': DateTime.now().toIso8601String(),
+            'status': 'success',
+            'server_response': jsonDecode(response.body),
+            'retry_count': retryCount,
+          });
+
+          // Synchroniser aussi vers le master local
+          await _syncToMasterJSON(formData);
+
+          return true;
+        } else if (response.statusCode == 409) {
+          // Doublon détecté côté serveur
+          print('⚠️ Doublon détecté par le serveur: ${formData.uuid}');
+
+          await _logSyncOperation({
+            'uuid': formData.uuid,
+            'timestamp': DateTime.now().toIso8601String(),
+            'status': 'duplicate',
+            'message': 'Formulaire déjà existant sur le serveur',
+          });
+
+          return true; // Considéré comme un succès (pas besoin de réessayer)
+        } else {
+          // Erreur HTTP
+          print('❌ Erreur serveur (${response.statusCode}): ${response.body}');
+
+          retryCount++;
+          if (retryCount < _maxRetries) {
+            print('🔄 Nouvelle tentative dans ${_retryDelay.inSeconds}s... ($retryCount/$_maxRetries)');
+            await Future.delayed(_retryDelay);
+          }
+        }
+      } on SocketException catch (e) {
+        print('❌ Pas de connexion réseau: $e');
+        return false; // Pas de retry si pas de réseau
+      } on TimeoutException catch (e) {
+        print('❌ Timeout: $e');
+        retryCount++;
+        if (retryCount < _maxRetries) {
+          await Future.delayed(_retryDelay);
+        }
+      } on FormatException catch (e) {
+        print('❌ Erreur format données: $e');
+        return false; // Erreur fatale, pas de retry
+      } catch (e) {
+        print('❌ Erreur inattendue: $e');
+        retryCount++;
+        if (retryCount < _maxRetries) {
+          await Future.delayed(_retryDelay);
+        }
+      }
+    }
+
+    // Échec après tous les retries
+    await _logSyncOperation({
       'uuid': formData.uuid,
       'timestamp': DateTime.now().toIso8601String(),
-      'json_master': null,
-    };
+      'status': 'failed',
+      'retry_count': retryCount,
+      'message': 'Échec après $retryCount tentatives',
+    });
 
-    // Synchroniser vers le fichier JSON master
-    try {
-      final jsonResult = await _syncToMasterJSON(formData);
-      result['json_master'] = jsonResult;
-    } catch (e) {
-      result['json_master'] = {
+    return false;
+  }
+
+  /// Synchroniser plusieurs formulaires avec gestion de progression
+  Future<Map<String, dynamic>> syncMultipleForms(
+      List<FormData> forms, {
+        Function(int current, int total)? onProgress,
+      }) async {
+    if (_isSyncing) {
+      return {
         'success': false,
-        'error': e.toString(),
+        'message': 'Une synchronisation est déjà en cours',
       };
     }
 
-    // Enregistrer le log
-    await _logSyncOperation(result);
+    _isSyncing = true;
 
-    return result;
+    int successCount = 0;
+    int failureCount = 0;
+    int duplicateCount = 0;
+    List<String> failedUuids = [];
+
+    try {
+      for (int i = 0; i < forms.length; i++) {
+        final form = forms[i];
+
+        // Notifier la progression
+        if (onProgress != null) {
+          onProgress(i + 1, forms.length);
+        }
+
+        // Tenter la synchronisation
+        final result = await syncFormToServer(form);
+
+        if (result == true) {
+          successCount++;
+        } else if (result == false) {
+          failureCount++;
+          failedUuids.add(form.uuid);
+        } else {
+          // null signifie doublon ou déjà synchronisé
+          duplicateCount++;
+        }
+
+        // Petite pause entre les envois pour ne pas surcharger le serveur
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      return {
+        'success': true,
+        'total': forms.length,
+        'success_count': successCount,
+        'failure_count': failureCount,
+        'duplicate_count': duplicateCount,
+        'failed_uuids': failedUuids,
+      };
+    } finally {
+      _isSyncing = false;
+    }
   }
 
   // =====================================================================
-  // SYNCHRONISATION VERS JSON MASTER
+  // SYNCHRONISATION VERS MASTER LOCAL (Backup)
   // =====================================================================
 
   /// Obtenir le fichier JSON master
@@ -103,28 +249,23 @@ class AutoSyncService {
     }
   }
 
-  /// Synchroniser vers le fichier JSON master avec vérification
+  /// Synchroniser vers le fichier JSON master local (backup)
   Future<Map<String, dynamic>> _syncToMasterJSON(FormData formData) async {
     try {
-      // 1. Lire le fichier master
       final masterData = await _readMasterFile();
 
-      // 2. Vérifier si l'UUID existe déjà
+      // Vérifier si l'UUID existe déjà
       if (masterData.containsKey(formData.uuid)) {
-        print('⚠️ UUID ${formData.uuid} existe déjà dans master');
-
-        // Comparer les timestamps pour savoir si c'est une mise à jour
         final existing = masterData[formData.uuid] as Map<String, dynamic>;
         final existingTimestamp = existing['metadata']?['timestamp'] ?? '';
         final newTimestamp = formData.metadata['timestamp'] ?? '';
 
         if (newTimestamp.compareTo(existingTimestamp) > 0) {
-          // C'est une mise à jour
+          // Mise à jour
           masterData[formData.uuid] = {
             ...formData.toJson(),
             'synced_to_master_at': DateTime.now().toIso8601String(),
             'is_update': true,
-            'previous_timestamp': existingTimestamp,
           };
 
           await _writeMasterFile(masterData);
@@ -132,7 +273,6 @@ class AutoSyncService {
           return {
             'success': true,
             'action': 'updated',
-            'message': 'Formulaire mis à jour dans master',
             'uuid': formData.uuid,
           };
         } else {
@@ -140,27 +280,11 @@ class AutoSyncService {
             'success': false,
             'action': 'skipped',
             'reason': 'duplicate_uuid',
-            'message': 'UUID existe déjà avec timestamp identique ou plus récent',
-            'uuid': formData.uuid,
           };
         }
       }
 
-      // 3. Vérifier les doublons par identité
-      final duplicate = _findDuplicateInMaster(masterData, formData);
-      if (duplicate != null) {
-        print('⚠️ Doublon détecté: ${duplicate['uuid']}');
-        return {
-          'success': false,
-          'action': 'rejected',
-          'reason': 'duplicate_identity',
-          'message': 'Personne déjà enregistrée',
-          'existing_uuid': duplicate['uuid'],
-          'match_type': duplicate['match_type'],
-        };
-      }
-
-      // 4. Ajouter au master
+      // Ajouter au master
       masterData[formData.uuid] = {
         ...formData.toJson(),
         'synced_to_master_at': DateTime.now().toIso8601String(),
@@ -169,18 +293,13 @@ class AutoSyncService {
 
       await _writeMasterFile(masterData);
 
-      final file = await _getMasterFile();
-      print('✅ Formulaire ajouté au master: ${file.path}');
-
       return {
         'success': true,
         'action': 'inserted',
-        'message': 'Formulaire ajouté au master',
         'uuid': formData.uuid,
-        'file_path': file.path,
       };
     } catch (e) {
-      print('❌ Erreur sync master: $e');
+      print('❌ Erreur sync master local: $e');
       return {
         'success': false,
         'action': 'error',
@@ -189,73 +308,15 @@ class AutoSyncService {
     }
   }
 
-  /// Trouver un doublon dans le fichier master
-  Map<String, dynamic>? _findDuplicateInMaster(
-      Map<String, dynamic> masterData,
-      FormData formData,
-      ) {
-    final nom = formData.identite['nom']?.toString().toLowerCase() ?? '';
-    final prenom = formData.identite['prenom']?.toString().toLowerCase() ?? '';
-    final dateNaissance = formData.identite['date_naissance'] ?? '';
-
-    for (var entry in masterData.entries) {
-      final data = entry.value as Map<String, dynamic>;
-      final identite = data['identite'] as Map<String, dynamic>? ?? {};
-
-      final existingNom = identite['nom']?.toString().toLowerCase() ?? '';
-      final existingPrenom = identite['prenom']?.toString().toLowerCase() ?? '';
-      final existingDateNaissance = identite['date_naissance'] ?? '';
-
-      // Correspondance exacte
-      if (nom == existingNom &&
-          prenom == existingPrenom &&
-          dateNaissance == existingDateNaissance) {
-        return {
-          'uuid': entry.key,
-          'match_type': 'exact',
-        };
-      }
-
-      // Correspondance similaire (optionnel)
-      if (_areSimilar(nom, existingNom) && _areSimilar(prenom, existingPrenom)) {
-        return {
-          'uuid': entry.key,
-          'match_type': 'similar',
-        };
-      }
-    }
-
-    return null;
-  }
-
-  /// Vérifier la similarité de deux chaînes
-  bool _areSimilar(String str1, String str2) {
-    if (str1.isEmpty || str2.isEmpty) return false;
-    if (str1 == str2) return true;
-
-    if ((str1.length - str2.length).abs() > 2) return false;
-
-    int differences = 0;
-    int minLength = str1.length < str2.length ? str1.length : str2.length;
-
-    for (int i = 0; i < minLength; i++) {
-      if (str1[i] != str2[i]) differences++;
-      if (differences > 2) return false;
-    }
-
-    return true;
-  }
-
   // =====================================================================
-  // SYNCHRONISATION MASSIVE (TOUS LES FORMULAIRES)
+  // SYNCHRONISATION MASSIVE
   // =====================================================================
 
-  /// Synchroniser tous les formulaires du fichier local vers master
+  /// Synchroniser tous les formulaires locaux vers le serveur
   Future<Map<String, dynamic>> syncAllFromLocalToMaster() async {
     try {
-      print('📊 Lecture du fichier local...');
+      print('📊 Lecture des formulaires locaux...');
 
-      // 1. Lire le fichier local
       final appDir = await getApplicationDocumentsDirectory();
       final localFile = File('${appDir.path}/formulaires_agriculture/formulaires_agriculture.json');
 
@@ -269,57 +330,13 @@ class AutoSyncService {
       final localContent = await localFile.readAsString();
       final localData = jsonDecode(localContent) as Map<String, dynamic>;
 
-      print('📊 ${localData.length} formulaires à traiter');
+      print('📊 ${localData.length} formulaires à synchroniser');
 
-      int inserted = 0;
-      int updated = 0;
-      int skipped = 0;
-      int errors = 0;
-      List<Map<String, dynamic>> duplicates = [];
+      final forms = localData.values
+          .map((json) => FormData.fromJson(json as Map<String, dynamic>))
+          .toList();
 
-      // 2. Synchroniser chaque formulaire
-      for (var entry in localData.entries) {
-        try {
-          final formData = FormData.fromJson(entry.value as Map<String, dynamic>);
-          final result = await autoSyncAfterSave(formData);
-
-          final jsonResult = result['json_master'];
-          if (jsonResult != null && jsonResult['success'] == true) {
-            if (jsonResult['action'] == 'inserted') {
-              inserted++;
-            } else if (jsonResult['action'] == 'updated') {
-              updated++;
-            }
-          } else if (jsonResult?['reason'] == 'duplicate_identity' ||
-              jsonResult?['reason'] == 'duplicate_uuid') {
-            skipped++;
-            duplicates.add({
-              'uuid': formData.uuid,
-              'nom': formData.identite['nom'],
-              'prenom': formData.identite['prenom'],
-              'reason': jsonResult['reason'],
-            });
-          } else {
-            errors++;
-          }
-        } catch (e) {
-          errors++;
-          print('❌ Erreur traitement ${entry.key}: $e');
-        }
-      }
-
-      final masterFile = await _getMasterFile();
-
-      return {
-        'success': true,
-        'total': localData.length,
-        'inserted': inserted,
-        'updated': updated,
-        'skipped': skipped,
-        'errors': errors,
-        'duplicates': duplicates,
-        'master_file_path': masterFile.path,
-      };
+      return await syncMultipleForms(forms);
     } catch (e) {
       print('❌ Erreur synchronisation massive: $e');
       return {
@@ -337,7 +354,13 @@ class AutoSyncService {
   Future<void> _logSyncOperation(Map<String, dynamic> result) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      final logFile = File('${appDir.path}/master_storage/$_syncLogFileName');
+      final logDir = Directory('${appDir.path}/master_storage');
+
+      if (!await logDir.exists()) {
+        await logDir.create(recursive: true);
+      }
+
+      final logFile = File('${logDir.path}/$_syncLogFileName');
 
       List<dynamic> logs = [];
 
@@ -350,9 +373,9 @@ class AutoSyncService {
 
       logs.add(result);
 
-      // Garder seulement les 500 derniers logs
-      if (logs.length > 500) {
-        logs = logs.sublist(logs.length - 500);
+      // Garder seulement les 1000 derniers logs
+      if (logs.length > 1000) {
+        logs = logs.sublist(logs.length - 1000);
       }
 
       await logFile.writeAsString(JsonEncoder.withIndent('  ').convert(logs));
@@ -377,8 +400,6 @@ class AutoSyncService {
       }
 
       final logs = jsonDecode(content) as List<dynamic>;
-
-      // Retourner les derniers logs (ordre inversé)
       return logs.reversed.take(limit).toList();
     } catch (e) {
       print('❌ Erreur lecture logs: $e');
@@ -386,74 +407,8 @@ class AutoSyncService {
     }
   }
 
-  // =====================================================================
-  // STATISTIQUES
-  // =====================================================================
-
-  /// Obtenir les statistiques du master
-  Future<Map<String, dynamic>> getMasterStatistics() async {
-    try {
-      final masterData = await _readMasterFile();
-
-      Map<String, int> byRegion = {};
-      Map<String, int> byCommune = {};
-      int withUpdates = 0;
-
-      for (var entry in masterData.values) {
-        final data = entry as Map<String, dynamic>;
-
-        // Par région
-        final region = data['identite']?['region'] ?? 'Non spécifié';
-        byRegion[region] = (byRegion[region] ?? 0) + 1;
-
-        // Par commune
-        final commune = data['identite']?['commune'] ?? 'Non spécifié';
-        byCommune[commune] = (byCommune[commune] ?? 0) + 1;
-
-        // Avec mises à jour
-        if (data['is_update'] == true) {
-          withUpdates++;
-        }
-      }
-
-      final masterFile = await _getMasterFile();
-
-      return {
-        'total_records': masterData.length,
-        'by_region': byRegion,
-        'by_commune': byCommune,
-        'with_updates': withUpdates,
-        'file_path': masterFile.path,
-        'file_size': await _getFileSize(masterFile),
-      };
-    } catch (e) {
-      print('❌ Erreur statistiques: $e');
-      return {};
-    }
-  }
-
-  /// Obtenir la taille du fichier
-  Future<String> _getFileSize(File file) async {
-    try {
-      final size = await file.length();
-      if (size < 1024) {
-        return '$size B';
-      } else if (size < 1048576) {
-        return '${(size / 1024).toStringAsFixed(2)} KB';
-      } else {
-        return '${(size / 1048576).toStringAsFixed(2)} MB';
-      }
-    } catch (e) {
-      return 'N/A';
-    }
-  }
-
-  // =====================================================================
-  // MAINTENANCE
-  // =====================================================================
-
   /// Nettoyer les anciens logs
-  Future<void> cleanOldLogs({int keepLast = 100}) async {
+  Future<void> cleanOldLogs({int keepLast = 500}) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final logFile = File('${appDir.path}/master_storage/$_syncLogFileName');
@@ -472,16 +427,6 @@ class AutoSyncService {
       }
     } catch (e) {
       print('❌ Erreur nettoyage logs: $e');
-    }
-  }
-
-  /// Réinitialiser le fichier master (ATTENTION: supprime tout!)
-  Future<void> resetMasterFile() async {
-    try {
-      await _writeMasterFile({});
-      print('⚠️ Fichier master réinitialisé');
-    } catch (e) {
-      print('❌ Erreur reset: $e');
     }
   }
 
