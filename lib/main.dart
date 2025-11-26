@@ -3,7 +3,7 @@ import 'package:kartstat/services/connection_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/offline_screen.dart';
-import 'screens/side_menu.dart';
+import 'screens/side_menu.dart'; // Doit pointer vers le bon fichier
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

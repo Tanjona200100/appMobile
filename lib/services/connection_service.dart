@@ -100,20 +100,38 @@ class ConnectionService {
 
   /// Tester l'accès Internet réel avec plusieurs URLs de secours
   Future<bool> _testInternetAccess() async {
+    // Test rapide d'abord avec lookup DNS
+    try {
+      final result = await InternetAddress.lookup('google.com').timeout(
+        const Duration(seconds: 3),
+      );
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        print('✅ Test DNS réussi - Internet disponible');
+        return true;
+      }
+    } catch (e) {
+      print('⚠️ Test DNS échoué: $e');
+    }
+
+    // Si DNS échoue, essayer les requêtes HTTP
     for (final url in _testUrls) {
       try {
-        final response = await http.get(Uri.parse(url)).timeout(
+        final response = await http.head(Uri.parse(url)).timeout(
           const Duration(seconds: 5),
         );
 
-        if (response.statusCode == 200) {
+        if (response.statusCode >= 200 && response.statusCode < 500) {
+          print('✅ Test HTTP réussi ($url) - Internet disponible');
           return true;
         }
-      } on SocketException {
+      } on SocketException catch (e) {
+        print('⚠️ SocketException sur $url: $e');
         continue;
-      } on TimeoutException {
+      } on TimeoutException catch (e) {
+        print('⚠️ Timeout sur $url: $e');
         continue;
-      } on HttpException {
+      } on HttpException catch (e) {
+        print('⚠️ HttpException sur $url: $e');
         continue;
       } catch (e) {
         print('⚠️ Erreur test connexion ($url): $e');
@@ -121,6 +139,7 @@ class ConnectionService {
       }
     }
 
+    print('❌ Tous les tests de connexion ont échoué');
     return false;
   }
 

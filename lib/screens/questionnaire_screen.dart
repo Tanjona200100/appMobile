@@ -18,6 +18,22 @@ class QuestionnaireScreen extends StatefulWidget {
 }
 
 class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
+  // Contrôleurs pour les champs texte
+  final TextEditingController anneesExperienceController = TextEditingController();
+  final TextEditingController surfaceTotaleController = TextEditingController();
+  final TextEditingController nombreParcellesController = TextEditingController();
+  final TextEditingController surfaceMoyenneController = TextEditingController();
+  final TextEditingController varietesSemencesController = TextEditingController();
+  final TextEditingController quantiteSemencesController = TextEditingController();
+  final TextEditingController quantiteEngraisChimiqueController = TextEditingController();
+  final TextEditingController frequenceEngraisController = TextEditingController();
+  final TextEditingController amendementsController = TextEditingController();
+  final TextEditingController rendementController = TextEditingController();
+  final TextEditingController dureeStockageController = TextEditingController();
+  final TextEditingController pertePostRecolteController = TextEditingController();
+  final TextEditingController quantiteVendueController = TextEditingController();
+  final TextEditingController prixVenteController = TextEditingController();
+
   // États pour les boutons radio
   bool? utilisationEngrais;
   bool? utilisationAmendements;
@@ -25,34 +41,32 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
   bool? vendezVousRiz;
   bool? cultivezRizHybride;
 
-  // États pour les checkboxes
+  // États pour les checkboxes avec les labels réels
   Map<String, bool> techniqueRiziculture = {
-    'Option 1': false,
-    'Option 2': true,
-    'Option 3': false,
-    'Option 4': true,
-    'Option 5': true,
+    'Riziculture pluviale': false,
+    'Riziculture irriguée': false,
+    'Riziculture de bas-fond': false,
   };
 
   Map<String, bool> objectifProduction = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
-    'Option 4': false,
-    'Option 5': false,
+    'Autoconsommation': false,
+    'Vente locale': false,
+    'Vente régionale': false,
+    'Semences': false,
+    'Autre': false,
   };
 
   Map<String, bool> provenanceSemences = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
-    'Option 4': false,
+    'Production propre': false,
+    'Achat local': false,
+    'Coopérative': false,
+    'Projet/ONG': false,
   };
 
   Map<String, bool> pratiqueSemis = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Semis direct': false,
+    'Repiquage': false,
+    'Semis en ligne': false,
   };
 
   Map<String, bool> typeEngrais = {
@@ -62,65 +76,278 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
   };
 
   Map<String, bool> sourcesEau = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
-    'Option 4': false,
+    'Rivière': false,
+    'Canal': false,
+    'Puits': false,
+    'Pluie': false,
   };
 
   Map<String, bool> systemeIrrigation = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Gravité': false,
+    'Pompage': false,
+    'Arrosage manuel': false,
   };
 
   Map<String, bool> problemesEau = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Sécheresse': false,
+    'Inondation': false,
+    'Qualité': false,
   };
 
   Map<String, bool> principauxRavageurs = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Insectes': false,
+    'Oiseaux': false,
+    'Rongeurs': false,
   };
 
   Map<String, bool> typePesticides = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Insecticide': false,
+    'Fongicide': false,
+    'Herbicide': false,
   };
 
   Map<String, bool> techniquesNaturelles = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Rotation': false,
+    'Association': false,
+    'Pièges': false,
   };
 
   Map<String, bool> modeRecolte = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Manuel': false,
+    'Mécanique': false,
+    'Mixte': false,
   };
 
   Map<String, bool> modeStockage = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Sacs': false,
+    'Grenier': false,
+    'Silo': false,
   };
 
   Map<String, bool> pratiqueApresRecolte = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Vente immédiate': false,
+    'Stockage': false,
+    'Transformation': false,
   };
 
   Map<String, bool> lieuVente = {
-    'Option 1': false,
-    'Option 2': false,
-    'Option 3': false,
+    'Marché local': false,
+    'Coopérative': false,
+    'Domicile': false,
   };
+
+  // Fonction pour générer le JSON complet avec la structure exacte de l'exemple
+  Map<String, dynamic> _generateCompleteJson() {
+    return {
+      "individu": {
+        "uuid": "indiv-uuid-001",
+        "nom": "Nom1",
+        "prenom": "Prenom1",
+        "surnom": "Rivo",
+        "sexe": "M",
+        "date_naissance": "1985-07-14",
+        "adresse": "Lot II J 54B",
+        "gps_point": "18.8792,47.5079",
+        "photo": "photo_url_1.jpg",
+        "user_id": 1,
+        "commune_id": 2,
+        "nom_pere": "Randrianarivo Jean",
+        "nom_mere": "Razanatsimba Lalao",
+        "profession": "Agriculteur",
+        "activites_complementaires": "Elevage, artisanat",
+        "statut_matrimonial": "Marié",
+        "nombre_personnes_a_charge": 4,
+        "telephone": "0321234567",
+        "cin": {
+          "numero": "345678912345",
+          "date_delivrance": "2017-09-01",
+          "commune_delivrance": "Antananarivo"
+        },
+        "commune_nom": "Antananarivo",
+        "fokontany_nom": "Ankilizato",
+        "nombre_enfants": 3,
+        "telephone2": "0348765432",
+        "lieu_naissance": "Antananarivo"
+      },
+      "parcelles": [
+        {
+          "nom": "Parcelle A",
+          "superficie": 1500.0,
+          "gps": {
+            "latitude": -18.879,
+            "longitude": 47.5078,
+            "altitude": 1280
+          },
+          "geom": [
+            {
+              "latitude": -18.879,
+              "longitude": 47.5078
+            },
+            {
+              "latitude": -18.87905,
+              "longitude": 47.50785
+            },
+            {
+              "latitude": -18.8791,
+              "longitude": 47.50775
+            },
+            {
+              "latitude": -18.879,
+              "longitude": 47.5078
+            }
+          ],
+          "description": "Rizière en terrasse"
+        }
+      ],
+      "questionnaire_parcelles": [
+        {
+          "exploitation": {
+            "type_contrat": "Propriétaire",
+            "technique_riziculture": _getSelectedOptions(techniqueRiziculture).isNotEmpty
+                ? _getSelectedOptions(techniqueRiziculture).first
+                : "Irriguée",
+            "surface_totale_m2": surfaceTotaleController.text.isEmpty
+                ? 1500
+                : double.tryParse(surfaceTotaleController.text)?.toInt(),
+            "nombre_parcelles": nombreParcellesController.text.isEmpty
+                ? 1
+                : int.tryParse(nombreParcellesController.text),
+            "surface_moyenne_parcelle_m2": surfaceMoyenneController.text.isEmpty
+                ? 1500
+                : double.tryParse(surfaceMoyenneController.text)?.toInt(),
+            "objectif_production": _getSelectedOptions(objectifProduction).isNotEmpty
+                ? _getSelectedOptions(objectifProduction)
+                : ["Autoconsommation", "Vente locale"],
+          },
+          "semences": {
+            "varietes_semences": varietesSemencesController.text.isEmpty
+                ? ["X123", "Y456"]
+                : varietesSemencesController.text.split(',').map((e) => e.trim()).toList(),
+            "provenance_semences": _getSelectedOptions(provenanceSemences).isNotEmpty
+                ? _getSelectedOptions(provenanceSemences)
+                : ["Production propre", "Achat local"],
+            "quantite_semences_kg": quantiteSemencesController.text.isEmpty
+                ? 30
+                : double.tryParse(quantiteSemencesController.text)?.toInt(),
+            "pratique_semis": _getSelectedOptions(pratiqueSemis).isNotEmpty
+                ? _getSelectedOptions(pratiqueSemis).first
+                : "Direct",
+          },
+          "engrais_et_amendements": {
+            "utilisation_engrais": utilisationEngrais ?? true,
+            "type_engrais": utilisationEngrais == true
+                ? (_getSelectedOptions(typeEngrais).isNotEmpty
+                ? _getSelectedOptions(typeEngrais)
+                : ["Chimique", "Organique"])
+                : null,
+            "quantite_engrais_chimique_kg": quantiteEngraisChimiqueController.text.isEmpty
+                ? 25
+                : double.tryParse(quantiteEngraisChimiqueController.text)?.toInt(),
+            "quantite_engrais_organique_kg": 100, // Valeur par défaut de l'exemple
+            "frequence_engrais": frequenceEngraisController.text.isEmpty
+                ? "1 par mois"
+                : frequenceEngraisController.text,
+            "utilisation_amendements": utilisationAmendements ?? true,
+            "amendements": utilisationAmendements == true
+                ? (amendementsController.text.isEmpty
+                ? ["Fumier", "Cendre"]
+                : amendementsController.text.split(',').map((e) => e.trim()).toList())
+                : null,
+          },
+          "eau_et_irrigation": {
+            "source_eau_principale": _getSelectedOptions(sourcesEau).isNotEmpty
+                ? _getSelectedOptions(sourcesEau)
+                : ["Canal", "Pluie"],
+            "systeme_irrigation": _getSelectedOptions(systemeIrrigation).isNotEmpty
+                ? _getSelectedOptions(systemeIrrigation).first
+                : "Par gravité",
+            "problemes_eau": _getSelectedOptions(problemesEau).isNotEmpty
+                ? _getSelectedOptions(problemesEau)
+                : ["Sécheresse"],
+          },
+          "protection_culture_et_recolte": {
+            "ravageurs": _getSelectedOptions(principauxRavageurs).isNotEmpty
+                ? _getSelectedOptions(principauxRavageurs)
+                : ["Insectes", "Rongeurs"],
+            "utilisation_pesticides": utilisationPesticides ?? true,
+            "type_pesticides": utilisationPesticides == true
+                ? (_getSelectedOptions(typePesticides).isNotEmpty
+                ? _getSelectedOptions(typePesticides)
+                : ["Chimique"])
+                : null,
+            "techniques_naturelles": _getSelectedOptions(techniquesNaturelles).isNotEmpty
+                ? _getSelectedOptions(techniquesNaturelles)
+                : ["Rotation des cultures"],
+            "mode_recolte": _getSelectedOptions(modeRecolte).isNotEmpty
+                ? _getSelectedOptions(modeRecolte).first
+                : "Manuel",
+          },
+          "production_et_stockage": {
+            "rendement_kg": rendementController.text.isEmpty
+                ? 200
+                : double.tryParse(rendementController.text)?.toInt(),
+            "duree_stockage_mois": dureeStockageController.text.isEmpty
+                ? 4
+                : int.tryParse(dureeStockageController.text),
+            "perte_post_recolte_pourcent": pertePostRecolteController.text.isEmpty
+                ? 10
+                : double.tryParse(pertePostRecolteController.text)?.toInt(),
+            "mode_stockage": _getSelectedOptions(modeStockage).isNotEmpty
+                ? _getSelectedOptions(modeStockage)
+                : ["Grenier"],
+            "pratique_post_recolte": _getSelectedOptions(pratiqueApresRecolte).isNotEmpty
+                ? _getSelectedOptions(pratiqueApresRecolte)
+                : ["Nouvelle culture"],
+          },
+          "commercialisation": {
+            "vente_riz": vendezVousRiz ?? true,
+            "quantite_vendue_kg": vendezVousRiz == true
+                ? (quantiteVendueController.text.isEmpty
+                ? 120
+                : double.tryParse(quantiteVendueController.text)?.toInt())
+                : null,
+            "prix_vente_ar_kg": vendezVousRiz == true
+                ? (prixVenteController.text.isEmpty
+                ? 1800
+                : double.tryParse(prixVenteController.text)?.toInt())
+                : null,
+            "lieu_vente": vendezVousRiz == true
+                ? (_getSelectedOptions(lieuVente).isNotEmpty
+                ? _getSelectedOptions(lieuVente)
+                : ["Marché local"])
+                : null,
+            "sait_cultiver_riz_hybride": cultivezRizHybride ?? true,
+          },
+          "diversification_activites": {
+            "autres_cultures": ["Haricot", "Maïs"],
+            "elevage": true,
+            "nombre_poules": 20,
+            "nombre_volailles": 5,
+            "nombre_boeufs": 2,
+            "nombre_porc": 0,
+            "nombre_moutons": 1,
+            "nombre_chevres": 3,
+            "nombre_lapins": 0,
+            "pisciculture": false
+          },
+          "competences_et_formation": {
+            "competences_maitrisees": ["Agroécologie", "Agriculture durable"],
+            "mode_formation": ["Formation en groupement"],
+            "competences_interet_formation": ["Gestion de ferme"]
+          },
+          "appui_et_besoins": {
+            "appui_social": true,
+            "appui_recu": ["Carte producteur", "Subvention engrais"],
+            "besoins_supplementaires": ["Matériel", "Financement"]
+          }
+        }
+      ]
+    };
+  }
+
+  List<String> _getSelectedOptions(Map<String, bool> options) {
+    return options.entries.where((entry) => entry.value).map((entry) => entry.key).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +421,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Technique de riziculture
+                    // QUEST 1 - Technique de riziculture
                     _buildSection(
                       'Technique de riziculture',
                       [
@@ -204,7 +431,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Années d'expérience et Surface totale
+                    // QUEST 1 - Années d'expérience et Surface totale
                     _buildSection(
                       '',
                       [
@@ -213,12 +440,14 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                             Expanded(
                               child: _buildTextField(
                                 'Années d\'expérience en riziculture',
+                                controller: anneesExperienceController,
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildTextField(
                                 'Surface totale cultivée en riz en m² (approximatif)',
+                                controller: surfaceTotaleController,
                               ),
                             ),
                           ],
@@ -228,19 +457,23 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Nombre de parcelles et Surface moyenne
+                    // QUEST 1 - Nombre de parcelles et Surface moyenne
                     _buildSection(
                       '',
                       [
                         Row(
                           children: [
                             Expanded(
-                              child: _buildTextField('Nombre de parcelles'),
+                              child: _buildTextField(
+                                'Nombre de parcelles',
+                                controller: nombreParcellesController,
+                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildTextField(
                                 'Surface moyenne d\'une parcelle en m²',
+                                controller: surfaceMoyenneController,
                               ),
                             ),
                           ],
@@ -250,29 +483,33 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Objectif de production
+                    // QUEST 1 - Objectif de production
                     _buildSection(
                       'Objectif de production',
                       [
-                        _buildCheckboxGrid(objectifProduction, 4),
+                        _buildCheckboxGrid(objectifProduction, 3),
                       ],
                     ),
 
                     const Divider(height: 48),
 
-                    // Variétés et Quantité de semences
+                    // QUEST 1 - Variétés et Quantité de semences
                     _buildSection(
                       '',
                       [
                         Row(
                           children: [
                             Expanded(
-                              child: _buildTextField('Variété(s) de(s) semence(s)'),
+                              child: _buildTextField(
+                                'Variété(s) de(s) semence(s)',
+                                controller: varietesSemencesController,
+                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildTextField(
                                 'Quantité de semences semées par an (kg)',
+                                controller: quantiteSemencesController,
                               ),
                             ),
                           ],
@@ -282,17 +519,17 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Provenance des semences
+                    // QUEST 1 - Provenance des semences
                     _buildSection(
                       'Provenance des semences',
                       [
-                        _buildCheckboxGrid(provenanceSemences, 4),
+                        _buildCheckboxGrid(provenanceSemences, 2),
                       ],
                     ),
 
                     const Divider(height: 48),
 
-                    // Pratique de semis
+                    // QUEST 1 - Pratique de semis
                     _buildSection(
                       'Pratique de semis',
                       [
@@ -302,7 +539,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Utilisation d'engrais
+                    // QUEST 2 - Utilisation d'engrais
                     _buildSection(
                       'Utilisation d\'engrais',
                       [
@@ -328,12 +565,14 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                               Expanded(
                                 child: _buildTextField(
                                   'Quantité d\'engrais chimique utilisé pour les cultures (kg)',
+                                  controller: quantiteEngraisChimiqueController,
                                 ),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
                                 child: _buildTextField(
                                   'Fréquence d\'application des engrais',
+                                  controller: frequenceEngraisController,
                                 ),
                               ),
                             ],
@@ -344,7 +583,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Utilisation d'amendements
+                    // QUEST 2 - Utilisation d'amendements
                     _buildSection(
                       'Utilisation d\'amendements',
                       [
@@ -356,6 +595,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                           const SizedBox(height: 16),
                           _buildTextField(
                             'Quels amendements ? (chaux, compost, cendres, etc)',
+                            controller: amendementsController,
                           ),
                         ],
                       ],
@@ -363,17 +603,17 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Sources d'eau
+                    // QUEST 3 - Sources d'eau
                     _buildSection(
                       'Source(s) d\'eau(x) principale(s)',
                       [
-                        _buildCheckboxGrid(sourcesEau, 4),
+                        _buildCheckboxGrid(sourcesEau, 2),
                       ],
                     ),
 
                     const Divider(height: 48),
 
-                    // Système d'irrigation
+                    // QUEST 3 - Système d'irrigation
                     _buildSection(
                       'Système d\'irrigation',
                       [
@@ -383,7 +623,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Problèmes d'eau
+                    // QUEST 3 - Problèmes d'eau
                     _buildSection(
                       'Problèmes d\'eau rencontrés',
                       [
@@ -393,7 +633,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Principaux ravageurs
+                    // QUEST 3 - Principaux ravageurs
                     _buildSection(
                       'Principaux ravageurs rencontrés',
                       [
@@ -403,7 +643,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Utilisation de pesticides
+                    // QUEST 3 - Utilisation de pesticides
                     _buildSection(
                       'Utilisation de pesticides',
                       [
@@ -429,7 +669,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Techniques naturelles
+                    // QUEST 3 - Techniques naturelles
                     _buildSection(
                       'Techniques naturelles utilisées',
                       [
@@ -439,7 +679,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Mode de récolte
+                    // QUEST 4 - Mode de récolte
                     _buildSection(
                       'Mode de récolte',
                       [
@@ -450,18 +690,21 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                             Expanded(
                               child: _buildTextField(
                                 'Rendement estimé par récolte (kg)',
+                                controller: rendementController,
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildTextField(
                                 'Durée de stockage moyenne du riz (mois)',
+                                controller: dureeStockageController,
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: _buildTextField(
                                 'Perte post récolte estimée (%)',
+                                controller: pertePostRecolteController,
                               ),
                             ),
                           ],
@@ -471,7 +714,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Mode de stockage
+                    // QUEST 4 - Mode de stockage
                     _buildSection(
                       'Mode de stockage du riz',
                       [
@@ -481,7 +724,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Pratique après récolte
+                    // QUEST 4 - Pratique après récolte
                     _buildSection(
                       'Pratique après récolte',
                       [
@@ -491,7 +734,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Vendez-vous votre riz
+                    // QUEST 4 - Vendez-vous votre riz
                     _buildSection(
                       'Vendez-vous votre riz ?',
                       [
@@ -506,12 +749,14 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                               Expanded(
                                 child: _buildTextField(
                                   'Quantité moyenne vendue par an (kg)',
+                                  controller: quantiteVendueController,
                                 ),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
                                 child: _buildTextField(
                                   'Prix moyen de vente (Ar/kg)',
+                                  controller: prixVenteController,
                                 ),
                               ),
                             ],
@@ -533,7 +778,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // Cultivez-vous le riz hybride
+                    // QUEST 4 - Cultivez-vous le riz hybride
                     _buildSection(
                       'Savez-vous cultiver le riz hybride ?',
                       [
@@ -591,8 +836,12 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                               const SizedBox(width: 12),
                               ElevatedButton(
                                 onPressed: () {
-                                  // Sauvegarder et retourner
-                                  Navigator.pop(context);
+                                  // Sauvegarder et retourner avec les données JSON complètes
+                                  final completeJsonData = _generateCompleteJson();
+                                  print('Données complètes du questionnaire: ${completeJsonData}');
+
+                                  // Retourner les données au parent
+                                  Navigator.pop(context, completeJsonData);
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF1AB999),
@@ -641,7 +890,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     );
   }
 
-  Widget _buildTextField(String label) {
+  Widget _buildTextField(String label, {required TextEditingController controller}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -655,6 +904,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
         ),
         const SizedBox(height: 8),
         TextField(
+          controller: controller,
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.white,

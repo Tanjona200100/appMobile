@@ -14,7 +14,7 @@ class MenuWidget extends StatelessWidget {
     required this.isMenuCollapsed,
     required this.onMenuItemTap,
     required this.onToggleMenu,
-    required this.onLogout, required int pendingSyncCount,
+    required this.onLogout, required int pendingSyncCount, required String userName,
   }) : super(key: key);
 
   @override

@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:kartstat/screens/side_menu.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:kartstat/screens/side_menu.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../main.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -20,11 +24,16 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isCheckingConnection = false;
   StreamSubscription<ConnectivityResult>? _connectivitySubscription;
 
+  // Configuration API
+  static const String API_BASE_URL = 'http://13.246.182.15:3001';
+  static const String LOGIN_ENDPOINT = '/login';
+
   @override
   void initState() {
     super.initState();
     _checkInternetOnStart();
     _startConnectivityListener();
+    _loadSavedCredentials();
   }
 
   @override
@@ -35,14 +44,26 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // Démarrer l'écouteur de connexion
+  /// Charge les identifiants sauvegardés (optionnel)
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedEmail = prefs.getString('last_email');
+      if (savedEmail != null && savedEmail.isNotEmpty) {
+        _emailController.text = savedEmail;
+      }
+    } catch (e) {
+      print('Erreur chargement credentials: $e');
+    }
+  }
+
+  /// Démarre l'écouteur de connexion
   void _startConnectivityListener() {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
           (ConnectivityResult result) async {
         print('Changement de connexion détecté: $result');
 
         if (result == ConnectivityResult.none) {
-          // Devenu hors ligne
           if (_hasInternet) {
             setState(() {
               _hasInternet = false;
@@ -50,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _showOfflinePopup();
           }
         } else {
-          // Devenu en ligne - tester l'accès réel à Internet
+          await Future.delayed(const Duration(seconds: 1));
           final hasRealInternet = await _testInternetAccess();
           if (!_hasInternet && hasRealInternet) {
             setState(() {
@@ -67,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Vérifie la connexion Internet au démarrage
+  /// Vérifie la connexion Internet au démarrage
   Future<void> _checkInternetOnStart() async {
     setState(() => _isCheckingConnection = true);
 
@@ -80,7 +101,6 @@ class _LoginScreenState extends State<LoginScreen> {
           _isCheckingConnection = false;
         });
 
-        // Affiche le popup après le rendu initial
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _showOfflinePopup();
         });
@@ -109,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // Test accès Internet réel
+  /// Test accès Internet réel
   Future<bool> _testInternetAccess() async {
     try {
       final response = await http
@@ -121,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // Affiche popup hors ligne
+  /// Affiche popup hors ligne
   void _showOfflinePopup() {
     if (!mounted) return;
 
@@ -142,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Affiche notification quand la connexion revient
+  /// Affiche notification quand la connexion revient
   void _showOnlineNotification() {
     if (!mounted) return;
 
@@ -161,7 +181,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Rafraîchir manuellement la connexion
+  /// Rafraîchir manuellement la connexion
   Future<void> _refreshConnection() async {
     setState(() => _isCheckingConnection = true);
 
@@ -191,8 +211,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // Gestion login - BLOQUÉ si hors ligne
-  void _handleLogin() async {
+  /// ========================================================================
+  /// NOUVELLE LOGIQUE DE LOGIN AVEC API
+  /// ========================================================================
+  Future<void> _handleLogin() async {
     // Vérifier d'abord si on est hors ligne
     if (!_hasInternet) {
       _showErrorDialog(
@@ -203,20 +225,19 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     // Validation des champs
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
       _showErrorDialog('Champs manquants', 'Veuillez remplir tous les champs');
       return;
     }
 
-    if (!_emailController.text.contains('@')) {
-      _showErrorDialog('Email invalide', 'Veuillez entrer une adresse email valide');
-      return;
-    }
 
     setState(() => _isLoading = true);
 
     try {
-      // Vérifier à nouveau la connexion Internet avant de procéder
+      // Vérifier à nouveau la connexion Internet
       final connectivityResult = await Connectivity().checkConnectivity();
       bool hasInternet = connectivityResult != ConnectivityResult.none;
 
@@ -224,7 +245,6 @@ class _LoginScreenState extends State<LoginScreen> {
         hasInternet = await _testInternetAccess();
       }
 
-      // Si perte de connexion pendant le processus
       if (!hasInternet) {
         setState(() {
           _hasInternet = false;
@@ -237,26 +257,136 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // SIMULATION D'AUTHENTIFICATION - À REMPLACER PAR VOTRE LOGIQUE RÉELLE
-      // Ici vous devriez appeler votre API d'authentification
-      await Future.delayed(const Duration(milliseconds: 1000));
+      // Appel API de connexion
+      final loginResult = await _performLogin(email, password);
 
-      // Redirection vers Dashboard (SideMenu) UNIQUEMENT si en ligne
-      if (mounted) {
+      if (!mounted) return;
+
+      if (loginResult['success'] == true) {
+        // Sauvegarder l'email pour la prochaine connexion
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_email', email);
+
+        // Sauvegarder le token et les infos utilisateur
+        if (loginResult['token'] != null) {
+          await prefs.setString('auth_token', loginResult['token']);
+        }
+        if (loginResult['user'] != null) {
+          await prefs.setString('user_data', jsonEncode(loginResult['user']));
+        }
+
+        // Redirection vers Dashboard
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const SideMenu()),
+          MaterialPageRoute(
+            builder: (context) => SideMenu(
+              userData: loginResult['user'],
+              authToken: loginResult['token'],
+            ),
+          ),
+        );
+      } else {
+        setState(() => _isLoading = false);
+        _showErrorDialog(
+          'Échec de connexion',
+          loginResult['message'] ?? 'Email ou mot de passe incorrect',
         );
       }
 
     } catch (error) {
-      // En cas d'erreur réseau ou serveur
       if (mounted) {
-        _showErrorDialog(
-            'Erreur de connexion',
-            'Impossible de se connecter au serveur. Veuillez vérifier votre connexion internet.'
-        );
         setState(() => _isLoading = false);
+        _showErrorDialog(
+          'Erreur de connexion',
+          'Impossible de se connecter au serveur. Veuillez vérifier votre connexion internet.',
+        );
       }
+      print('Erreur login: $error');
+    }
+  }
+
+  /// Effectue l'appel API de connexion
+  Future<Map<String, dynamic>> _performLogin(String email, String password) async {
+    try {
+      final url = Uri.parse('$API_BASE_URL$LOGIN_ENDPOINT');
+
+      print('🔐 Tentative de connexion à: $url');
+      print('📧 Email: $email');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+        }),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw TimeoutException('La requête a expiré');
+        },
+      );
+
+      print('📡 Status Code: ${response.statusCode}');
+      print('📡 Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+
+        // Format de réponse attendu:
+        // {
+        //   "success": true,
+        //   "message": "Login successful",
+        //   "token": "jwt_token_here",
+        //   "user": {
+        //     "id": "user_id",
+        //     "email": "user@example.com",
+        //     "name": "User Name",
+        //     "role": "agent"
+        //   }
+        // }
+
+        return {
+          'success': true,
+          'token': data['token'],
+          'user': data['user'],
+          'message': data['message'] ?? 'Connexion réussie',
+        };
+      } else if (response.statusCode == 401) {
+        return {
+          'success': false,
+          'message': 'Email ou mot de passe incorrect',
+        };
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Données invalides',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Erreur serveur (${response.statusCode})',
+        };
+      }
+    } on TimeoutException {
+      return {
+        'success': false,
+        'message': 'Délai de connexion dépassé. Veuillez réessayer.',
+      };
+    } on FormatException {
+      return {
+        'success': false,
+        'message': 'Erreur de format de réponse du serveur',
+      };
+    } catch (e) {
+      print('❌ Erreur login: $e');
+      return {
+        'success': false,
+        'message': 'Erreur de connexion: ${e.toString()}',
+      };
     }
   }
 
@@ -268,15 +398,15 @@ class _LoginScreenState extends State<LoginScreen> {
         content: Text(message),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK")
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK"),
           )
         ],
       ),
     );
   }
 
-  // Gestion du mot de passe oublié - BLOQUÉ si hors ligne
+  /// Gestion du mot de passe oublié
   void _handleForgotPassword() {
     if (!_hasInternet) {
       _showErrorDialog(
@@ -302,9 +432,9 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // -------------------------------------------------------------
-  // UI
-  // -------------------------------------------------------------
+  // =====================================================================
+  // UI - Reste identique
+  // =====================================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -389,22 +519,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildLoginForm() {
     return Column(
       children: [
-        // Email
         _buildEmailField(),
         const SizedBox(height: 30),
-
-        // Mot de passe
         _buildPasswordField(),
         const SizedBox(height: 50),
-
-        // Bouton connexion
         _buildLoginButton(),
-
-        // Indicateur de statut Internet avec bouton rafraîchir
-        const SizedBox(height: 20),
-     //   _buildInternetStatus(),
-
-        // Message d'avertissement si hors ligne
         if (!_hasInternet) ...[
           const SizedBox(height: 20),
           _buildOfflineWarning(),
@@ -567,34 +686,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
- /* Widget _buildInternetStatus() {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _hasInternet ? Icons.wifi : Icons.wifi_off,
-              color: _hasInternet ? Colors.green : Colors.red,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              _hasInternet ? 'Connecté à Internet' : 'Hors ligne',
-              style: TextStyle(
-                color: _hasInternet ? Colors.green : Colors.red,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        
-      ],
-    );
-  }*/
-
   Widget _buildOfflineWarning() {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -621,7 +712,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Logo PNG
   Widget _buildLogoWidget() {
     return ClipOval(
       child: Container(

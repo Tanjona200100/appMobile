@@ -225,4 +225,6 @@ class UnifiedStorageService {
 
     print('✅ Nettoyage doublons terminé: ${allForms.length - uniqueForms.length} doublons supprimés');
   }
+
+  Future getFormsByCIN(String numeroCIN) async {}
 }
