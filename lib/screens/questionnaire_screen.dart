@@ -18,30 +18,17 @@ class QuestionnaireScreen extends StatefulWidget {
 }
 
 class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
-  // Contrôleurs pour les champs texte
-  final TextEditingController anneesExperienceController = TextEditingController();
-  final TextEditingController surfaceTotaleController = TextEditingController();
-  final TextEditingController nombreParcellesController = TextEditingController();
-  final TextEditingController surfaceMoyenneController = TextEditingController();
-  final TextEditingController varietesSemencesController = TextEditingController();
-  final TextEditingController quantiteSemencesController = TextEditingController();
-  final TextEditingController quantiteEngraisChimiqueController = TextEditingController();
-  final TextEditingController frequenceEngraisController = TextEditingController();
-  final TextEditingController amendementsController = TextEditingController();
-  final TextEditingController rendementController = TextEditingController();
-  final TextEditingController dureeStockageController = TextEditingController();
-  final TextEditingController pertePostRecolteController = TextEditingController();
-  final TextEditingController quantiteVendueController = TextEditingController();
-  final TextEditingController prixVenteController = TextEditingController();
-
   // États pour les boutons radio
   bool? utilisationEngrais;
   bool? utilisationAmendements;
   bool? utilisationPesticides;
   bool? vendezVousRiz;
   bool? cultivezRizHybride;
+  bool? elevage;
+  bool? pisciculture;
+  bool? appuiSocial;
 
-  // États pour les checkboxes avec les labels réels
+  // Map pour toutes les options avec cases à cocher
   Map<String, bool> techniqueRiziculture = {
     'Riziculture pluviale': false,
     'Riziculture irriguée': false,
@@ -136,213 +123,502 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     'Domicile': false,
   };
 
-  // Fonction pour générer le JSON complet avec la structure exacte de l'exemple
-  Map<String, dynamic> _generateCompleteJson() {
+  // NOUVEAUX MAPS pour remplacer les TextEditingController
+  Map<String, bool> anneesExperience = {
+    'Moins de 1 an': false,
+    '1-5 ans': false,
+    '6-10 ans': false,
+    '11-20 ans': false,
+    'Plus de 20 ans': false,
+  };
+
+  Map<String, bool> surfaceTotale = {
+    'Moins de 1000 m²': false,
+    '1000-5000 m²': false,
+    '5001-10000 m²': false,
+    '10001-20000 m²': false,
+    'Plus de 20000 m²': false,
+  };
+
+  Map<String, bool> nombreParcelles = {
+    '1 parcelle': false,
+    '2-3 parcelles': false,
+    '4-5 parcelles': false,
+    '6-10 parcelles': false,
+    'Plus de 10 parcelles': false,
+  };
+
+  Map<String, bool> surfaceMoyenne = {
+    'Moins de 500 m²': false,
+    '500-1000 m²': false,
+    '1001-2000 m²': false,
+    '2001-5000 m²': false,
+    'Plus de 5000 m²': false,
+  };
+
+  Map<String, bool> varietesSemences = {
+    'Vary gasy': false,
+    'Makalioka': false,
+    'X265': false,
+    'X266': false,
+    'Résistant 15': false,
+    'Autre variété locale': false,
+    'Autre variété hybride': false,
+  };
+
+  Map<String, bool> quantiteSemences = {
+    'Moins de 10 kg': false,
+    '10-25 kg': false,
+    '26-50 kg': false,
+    '51-100 kg': false,
+    'Plus de 100 kg': false,
+  };
+
+  Map<String, bool> quantiteEngraisChimique = {
+    'Moins de 10 kg': false,
+    '10-25 kg': false,
+    '26-50 kg': false,
+    '51-100 kg': false,
+    'Plus de 100 kg': false,
+  };
+
+  Map<String, bool> quantiteEngraisOrganique = {
+    'Moins de 50 kg': false,
+    '50-100 kg': false,
+    '101-200 kg': false,
+    '201-500 kg': false,
+    'Plus de 500 kg': false,
+  };
+
+  Map<String, bool> frequenceEngrais = {
+    '1 fois par saison': false,
+    '2 fois par saison': false,
+    '3 fois par saison': false,
+    'Plus de 3 fois': false,
+    'Selon les besoins': false,
+  };
+
+  Map<String, bool> amendements = {
+    'Chaux': false,
+    'Compost': false,
+    'Fumier': false,
+    'Cendres': false,
+    'Biochar': false,
+    'Aucun': false,
+  };
+
+  Map<String, bool> rendement = {
+    'Moins de 100 kg': false,
+    '100-500 kg': false,
+    '501-1000 kg': false,
+    '1001-2000 kg': false,
+    'Plus de 2000 kg': false,
+  };
+
+  Map<String, bool> dureeStockage = {
+    'Moins de 1 mois': false,
+    '1-3 mois': false,
+    '4-6 mois': false,
+    '7-12 mois': false,
+    'Plus d\'1 an': false,
+  };
+
+  Map<String, bool> pertePostRecolte = {
+    'Moins de 5%': false,
+    '5-10%': false,
+    '11-20%': false,
+    '21-30%': false,
+    'Plus de 30%': false,
+  };
+
+  Map<String, bool> quantiteVendue = {
+    'Moins de 50 kg': false,
+    '50-100 kg': false,
+    '101-200 kg': false,
+    '201-500 kg': false,
+    'Plus de 500 kg': false,
+  };
+
+  Map<String, bool> prixVente = {
+    'Moins de 1000 Ar/kg': false,
+    '1000-1500 Ar/kg': false,
+    '1501-2000 Ar/kg': false,
+    '2001-2500 Ar/kg': false,
+    'Plus de 2500 Ar/kg': false,
+  };
+
+  Map<String, bool> autresCultures = {
+    'Maïs': false,
+    'Manioc': false,
+    'Haricot': false,
+    'Légumes': false,
+    'Fruits': false,
+    'Aucune autre culture': false,
+  };
+
+  Map<String, bool> nombrePoules = {
+    'Aucune': false,
+    '1-10': false,
+    '11-20': false,
+    '21-50': false,
+    'Plus de 50': false,
+  };
+
+  Map<String, bool> nombreVolailles = {
+    'Aucune': false,
+    '1-10': false,
+    '11-20': false,
+    '21-50': false,
+    'Plus de 50': false,
+  };
+
+  Map<String, bool> nombreBoeufs = {
+    'Aucun': false,
+    '1-2': false,
+    '3-5': false,
+    '6-10': false,
+    'Plus de 10': false,
+  };
+
+  Map<String, bool> nombrePorc = {
+    'Aucun': false,
+    '1-2': false,
+    '3-5': false,
+    '6-10': false,
+    'Plus de 10': false,
+  };
+
+  Map<String, bool> nombreMoutons = {
+    'Aucun': false,
+    '1-2': false,
+    '3-5': false,
+    '6-10': false,
+    'Plus de 10': false,
+  };
+
+  Map<String, bool> nombreChevres = {
+    'Aucun': false,
+    '1-2': false,
+    '3-5': false,
+    '6-10': false,
+    'Plus de 10': false,
+  };
+
+  Map<String, bool> nombreLapins = {
+    'Aucun': false,
+    '1-2': false,
+    '3-5': false,
+    '6-10': false,
+    'Plus de 10': false,
+  };
+
+  Map<String, bool> competencesMaitrisees = {
+    'Préparation sol': false,
+    'Semis': false,
+    'Irrigation': false,
+    'Fertilisation': false,
+    'Traitement phytosanitaire': false,
+    'Récolte': false,
+    'Stockage': false,
+  };
+
+  Map<String, bool> modeFormation = {
+    'Formation en groupe': false,
+    'Formation individuelle': false,
+    'Démonstration champ': false,
+    'Visite échange': false,
+    'Radio rurale': false,
+    'Aucune formation': false,
+  };
+
+  Map<String, bool> competencesInteret = {
+    'Nouvelles techniques': false,
+    'Gestion financière': false,
+    'Commercialisation': false,
+    'Transformation': false,
+    'Gestion stock': false,
+    'Agriculture biologique': false,
+  };
+
+  Map<String, bool> appuiRecu = {
+    'Semences': false,
+    'Engrais': false,
+    'Matériel agricole': false,
+    'Formation': false,
+    'Financement': false,
+    'Aucun appui': false,
+  };
+
+  Map<String, bool> besoinsSupplementaires = {
+    'Semences améliorées': false,
+    'Engrais': false,
+    'Matériel irrigation': false,
+    'Formation': false,
+    'Financement': false,
+    'Accès marché': false,
+  };
+
+  Map<String, dynamic> _generateQuestionnaireData() {
     return {
-      "individu": {
-        "uuid": "indiv-uuid-001",
-        "nom": "Nom1",
-        "prenom": "Prenom1",
-        "surnom": "Rivo",
-        "sexe": "M",
-        "date_naissance": "1985-07-14",
-        "adresse": "Lot II J 54B",
-        "gps_point": "18.8792,47.5079",
-        "photo": "photo_url_1.jpg",
-        "user_id": 1,
-        "commune_id": 2,
-        "nom_pere": "Randrianarivo Jean",
-        "nom_mere": "Razanatsimba Lalao",
-        "profession": "Agriculteur",
-        "activites_complementaires": "Elevage, artisanat",
-        "statut_matrimonial": "Marié",
-        "nombre_personnes_a_charge": 4,
-        "telephone": "0321234567",
-        "cin": {
-          "numero": "345678912345",
-          "date_delivrance": "2017-09-01",
-          "commune_delivrance": "Antananarivo"
-        },
-        "commune_nom": "Antananarivo",
-        "fokontany_nom": "Ankilizato",
-        "nombre_enfants": 3,
-        "telephone2": "0348765432",
-        "lieu_naissance": "Antananarivo"
+      "exploitation": {
+        "type_contrat": "Co-gestion",
+        "technique_riziculture": _getSelectedOptions(techniqueRiziculture).isNotEmpty
+            ? _getSelectedOptions(techniqueRiziculture).join(', ')
+            : "Traditionnelle",
+        "surface_totale_m2": _convertSurfaceToNumber(_getSelectedOptions(surfaceTotale).isNotEmpty
+            ? _getSelectedOptions(surfaceTotale).first
+            : "Moins de 1000 m²"),
+        "nombre_parcelles": _convertNombreToNumber(_getSelectedOptions(nombreParcelles).isNotEmpty
+            ? _getSelectedOptions(nombreParcelles).first
+            : "1 parcelle"),
+        "surface_moyenne_parcelle_m2": _convertSurfaceToNumber(_getSelectedOptions(surfaceMoyenne).isNotEmpty
+            ? _getSelectedOptions(surfaceMoyenne).first
+            : "Moins de 500 m²"),
+        "objectif_production": _getSelectedOptions(objectifProduction).isNotEmpty
+            ? _getSelectedOptions(objectifProduction)
+            : [],
       },
-      "parcelles": [
-        {
-          "nom": "Parcelle A",
-          "superficie": 1500.0,
-          "gps": {
-            "latitude": -18.879,
-            "longitude": 47.5078,
-            "altitude": 1280
-          },
-          "geom": [
-            {
-              "latitude": -18.879,
-              "longitude": 47.5078
-            },
-            {
-              "latitude": -18.87905,
-              "longitude": 47.50785
-            },
-            {
-              "latitude": -18.8791,
-              "longitude": 47.50775
-            },
-            {
-              "latitude": -18.879,
-              "longitude": 47.5078
-            }
-          ],
-          "description": "Rizière en terrasse"
-        }
-      ],
-      "questionnaire_parcelles": [
-        {
-          "exploitation": {
-            "type_contrat": "Propriétaire",
-            "technique_riziculture": _getSelectedOptions(techniqueRiziculture).isNotEmpty
-                ? _getSelectedOptions(techniqueRiziculture).first
-                : "Irriguée",
-            "surface_totale_m2": surfaceTotaleController.text.isEmpty
-                ? 1500
-                : double.tryParse(surfaceTotaleController.text)?.toInt(),
-            "nombre_parcelles": nombreParcellesController.text.isEmpty
-                ? 1
-                : int.tryParse(nombreParcellesController.text),
-            "surface_moyenne_parcelle_m2": surfaceMoyenneController.text.isEmpty
-                ? 1500
-                : double.tryParse(surfaceMoyenneController.text)?.toInt(),
-            "objectif_production": _getSelectedOptions(objectifProduction).isNotEmpty
-                ? _getSelectedOptions(objectifProduction)
-                : ["Autoconsommation", "Vente locale"],
-          },
-          "semences": {
-            "varietes_semences": varietesSemencesController.text.isEmpty
-                ? ["X123", "Y456"]
-                : varietesSemencesController.text.split(',').map((e) => e.trim()).toList(),
-            "provenance_semences": _getSelectedOptions(provenanceSemences).isNotEmpty
-                ? _getSelectedOptions(provenanceSemences)
-                : ["Production propre", "Achat local"],
-            "quantite_semences_kg": quantiteSemencesController.text.isEmpty
-                ? 30
-                : double.tryParse(quantiteSemencesController.text)?.toInt(),
-            "pratique_semis": _getSelectedOptions(pratiqueSemis).isNotEmpty
-                ? _getSelectedOptions(pratiqueSemis).first
-                : "Direct",
-          },
-          "engrais_et_amendements": {
-            "utilisation_engrais": utilisationEngrais ?? true,
-            "type_engrais": utilisationEngrais == true
-                ? (_getSelectedOptions(typeEngrais).isNotEmpty
-                ? _getSelectedOptions(typeEngrais)
-                : ["Chimique", "Organique"])
-                : null,
-            "quantite_engrais_chimique_kg": quantiteEngraisChimiqueController.text.isEmpty
-                ? 25
-                : double.tryParse(quantiteEngraisChimiqueController.text)?.toInt(),
-            "quantite_engrais_organique_kg": 100, // Valeur par défaut de l'exemple
-            "frequence_engrais": frequenceEngraisController.text.isEmpty
-                ? "1 par mois"
-                : frequenceEngraisController.text,
-            "utilisation_amendements": utilisationAmendements ?? true,
-            "amendements": utilisationAmendements == true
-                ? (amendementsController.text.isEmpty
-                ? ["Fumier", "Cendre"]
-                : amendementsController.text.split(',').map((e) => e.trim()).toList())
-                : null,
-          },
-          "eau_et_irrigation": {
-            "source_eau_principale": _getSelectedOptions(sourcesEau).isNotEmpty
-                ? _getSelectedOptions(sourcesEau)
-                : ["Canal", "Pluie"],
-            "systeme_irrigation": _getSelectedOptions(systemeIrrigation).isNotEmpty
-                ? _getSelectedOptions(systemeIrrigation).first
-                : "Par gravité",
-            "problemes_eau": _getSelectedOptions(problemesEau).isNotEmpty
-                ? _getSelectedOptions(problemesEau)
-                : ["Sécheresse"],
-          },
-          "protection_culture_et_recolte": {
-            "ravageurs": _getSelectedOptions(principauxRavageurs).isNotEmpty
-                ? _getSelectedOptions(principauxRavageurs)
-                : ["Insectes", "Rongeurs"],
-            "utilisation_pesticides": utilisationPesticides ?? true,
-            "type_pesticides": utilisationPesticides == true
-                ? (_getSelectedOptions(typePesticides).isNotEmpty
-                ? _getSelectedOptions(typePesticides)
-                : ["Chimique"])
-                : null,
-            "techniques_naturelles": _getSelectedOptions(techniquesNaturelles).isNotEmpty
-                ? _getSelectedOptions(techniquesNaturelles)
-                : ["Rotation des cultures"],
-            "mode_recolte": _getSelectedOptions(modeRecolte).isNotEmpty
-                ? _getSelectedOptions(modeRecolte).first
-                : "Manuel",
-          },
-          "production_et_stockage": {
-            "rendement_kg": rendementController.text.isEmpty
-                ? 200
-                : double.tryParse(rendementController.text)?.toInt(),
-            "duree_stockage_mois": dureeStockageController.text.isEmpty
-                ? 4
-                : int.tryParse(dureeStockageController.text),
-            "perte_post_recolte_pourcent": pertePostRecolteController.text.isEmpty
-                ? 10
-                : double.tryParse(pertePostRecolteController.text)?.toInt(),
-            "mode_stockage": _getSelectedOptions(modeStockage).isNotEmpty
-                ? _getSelectedOptions(modeStockage)
-                : ["Grenier"],
-            "pratique_post_recolte": _getSelectedOptions(pratiqueApresRecolte).isNotEmpty
-                ? _getSelectedOptions(pratiqueApresRecolte)
-                : ["Nouvelle culture"],
-          },
-          "commercialisation": {
-            "vente_riz": vendezVousRiz ?? true,
-            "quantite_vendue_kg": vendezVousRiz == true
-                ? (quantiteVendueController.text.isEmpty
-                ? 120
-                : double.tryParse(quantiteVendueController.text)?.toInt())
-                : null,
-            "prix_vente_ar_kg": vendezVousRiz == true
-                ? (prixVenteController.text.isEmpty
-                ? 1800
-                : double.tryParse(prixVenteController.text)?.toInt())
-                : null,
-            "lieu_vente": vendezVousRiz == true
-                ? (_getSelectedOptions(lieuVente).isNotEmpty
-                ? _getSelectedOptions(lieuVente)
-                : ["Marché local"])
-                : null,
-            "sait_cultiver_riz_hybride": cultivezRizHybride ?? true,
-          },
-          "diversification_activites": {
-            "autres_cultures": ["Haricot", "Maïs"],
-            "elevage": true,
-            "nombre_poules": 20,
-            "nombre_volailles": 5,
-            "nombre_boeufs": 2,
-            "nombre_porc": 0,
-            "nombre_moutons": 1,
-            "nombre_chevres": 3,
-            "nombre_lapins": 0,
-            "pisciculture": false
-          },
-          "competences_et_formation": {
-            "competences_maitrisees": ["Agroécologie", "Agriculture durable"],
-            "mode_formation": ["Formation en groupement"],
-            "competences_interet_formation": ["Gestion de ferme"]
-          },
-          "appui_et_besoins": {
-            "appui_social": true,
-            "appui_recu": ["Carte producteur", "Subvention engrais"],
-            "besoins_supplementaires": ["Matériel", "Financement"]
-          }
-        }
-      ]
+      "semences": {
+        "varietes_semences": _getSelectedOptions(varietesSemences).isNotEmpty
+            ? _getSelectedOptions(varietesSemences)
+            : [],
+        "provenance_semences": _getSelectedOptions(provenanceSemences).isNotEmpty
+            ? _getSelectedOptions(provenanceSemences)
+            : [],
+        "quantite_semences_kg": _convertQuantiteToNumber(_getSelectedOptions(quantiteSemences).isNotEmpty
+            ? _getSelectedOptions(quantiteSemences).first
+            : "Moins de 10 kg"),
+        "pratique_semis": _getSelectedOptions(pratiqueSemis).isNotEmpty
+            ? _getSelectedOptions(pratiqueSemis).join(', ')
+            : "Direct",
+      },
+      "engrais_et_amendements": {
+        "utilisation_engrais": utilisationEngrais ?? false,
+        "type_engrais": utilisationEngrais == true
+            ? (_getSelectedOptions(typeEngrais).isNotEmpty
+            ? _getSelectedOptions(typeEngrais)
+            : [])
+            : [],
+        "quantite_engrais_chimique_kg": _convertQuantiteToNumber(_getSelectedOptions(quantiteEngraisChimique).isNotEmpty
+            ? _getSelectedOptions(quantiteEngraisChimique).first
+            : "Moins de 10 kg"),
+        "quantite_engrais_organique_kg": _convertQuantiteOrganiquToNumber(_getSelectedOptions(quantiteEngraisOrganique).isNotEmpty
+            ? _getSelectedOptions(quantiteEngraisOrganique).first
+            : "Moins de 50 kg"),
+        "frequence_engrais": _getSelectedOptions(frequenceEngrais).isNotEmpty
+            ? _getSelectedOptions(frequenceEngrais).first
+            : "",
+        "utilisation_amendements": utilisationAmendements ?? false,
+        "amendements": utilisationAmendements == true
+            ? (_getSelectedOptions(amendements).isNotEmpty
+            ? _getSelectedOptions(amendements)
+            : [])
+            : [],
+      },
+      "eau_et_irrigation": {
+        "source_eau_principale": _getSelectedOptions(sourcesEau).isNotEmpty
+            ? _getSelectedOptions(sourcesEau)
+            : [],
+        "systeme_irrigation": _getSelectedOptions(systemeIrrigation).isNotEmpty
+            ? _getSelectedOptions(systemeIrrigation).join(', ')
+            : "",
+        "problemes_eau": _getSelectedOptions(problemesEau).isNotEmpty
+            ? _getSelectedOptions(problemesEau)
+            : [],
+      },
+      "protection_culture_et_recolte": {
+        "ravageurs": _getSelectedOptions(principauxRavageurs).isNotEmpty
+            ? _getSelectedOptions(principauxRavageurs)
+            : [],
+        "utilisation_pesticides": utilisationPesticides ?? false,
+        "type_pesticides": utilisationPesticides == true
+            ? (_getSelectedOptions(typePesticides).isNotEmpty
+            ? _getSelectedOptions(typePesticides)
+            : [])
+            : [],
+        "techniques_naturelles": _getSelectedOptions(techniquesNaturelles).isNotEmpty
+            ? _getSelectedOptions(techniquesNaturelles)
+            : [],
+        "mode_recolte": _getSelectedOptions(modeRecolte).isNotEmpty
+            ? _getSelectedOptions(modeRecolte).first
+            : "Manuel",
+      },
+      "production_et_stockage": {
+        "rendement_kg": _convertRendementToNumber(_getSelectedOptions(rendement).isNotEmpty
+            ? _getSelectedOptions(rendement).first
+            : "Moins de 100 kg"),
+        "duree_stockage_mois": _convertDureeToNumber(_getSelectedOptions(dureeStockage).isNotEmpty
+            ? _getSelectedOptions(dureeStockage).first
+            : "Moins de 1 mois"),
+        "perte_post_recolte_pourcent": _convertPerteToNumber(_getSelectedOptions(pertePostRecolte).isNotEmpty
+            ? _getSelectedOptions(pertePostRecolte).first
+            : "Moins de 5%"),
+        "mode_stockage": _getSelectedOptions(modeStockage).isNotEmpty
+            ? _getSelectedOptions(modeStockage)
+            : [],
+        "pratique_post_recolte": _getSelectedOptions(pratiqueApresRecolte).isNotEmpty
+            ? _getSelectedOptions(pratiqueApresRecolte)
+            : [],
+      },
+      "commercialisation": {
+        "vente_riz": vendezVousRiz ?? false,
+        "quantite_vendue_kg": vendezVousRiz == true
+            ? _convertQuantiteVendueToNumber(_getSelectedOptions(quantiteVendue).isNotEmpty
+            ? _getSelectedOptions(quantiteVendue).first
+            : "Moins de 50 kg")
+            : 0,
+        "prix_vente_ar_kg": vendezVousRiz == true
+            ? _convertPrixToNumber(_getSelectedOptions(prixVente).isNotEmpty
+            ? _getSelectedOptions(prixVente).first
+            : "Moins de 1000 Ar/kg")
+            : 0,
+        "lieu_vente": vendezVousRiz == true
+            ? (_getSelectedOptions(lieuVente).isNotEmpty
+            ? _getSelectedOptions(lieuVente)
+            : [])
+            : [],
+        "sait_cultiver_riz_hybride": cultivezRizHybride ?? false,
+      },
+      "diversification_activites": {
+        "autres_cultures": _getSelectedOptions(autresCultures).isNotEmpty
+            ? _getSelectedOptions(autresCultures)
+            : [],
+        "elevage": elevage ?? false,
+        "nombre_poules": _convertNombreAnimauxToNumber(_getSelectedOptions(nombrePoules).isNotEmpty
+            ? _getSelectedOptions(nombrePoules).first
+            : "Aucune"),
+        "nombre_volailles": _convertNombreAnimauxToNumber(_getSelectedOptions(nombreVolailles).isNotEmpty
+            ? _getSelectedOptions(nombreVolailles).first
+            : "Aucune"),
+        "nombre_boeufs": _convertNombreAnimauxToNumber(_getSelectedOptions(nombreBoeufs).isNotEmpty
+            ? _getSelectedOptions(nombreBoeufs).first
+            : "Aucun"),
+        "nombre_porc": _convertNombreAnimauxToNumber(_getSelectedOptions(nombrePorc).isNotEmpty
+            ? _getSelectedOptions(nombrePorc).first
+            : "Aucun"),
+        "nombre_moutons": _convertNombreAnimauxToNumber(_getSelectedOptions(nombreMoutons).isNotEmpty
+            ? _getSelectedOptions(nombreMoutons).first
+            : "Aucun"),
+        "nombre_chevres": _convertNombreAnimauxToNumber(_getSelectedOptions(nombreChevres).isNotEmpty
+            ? _getSelectedOptions(nombreChevres).first
+            : "Aucun"),
+        "nombre_lapins": _convertNombreAnimauxToNumber(_getSelectedOptions(nombreLapins).isNotEmpty
+            ? _getSelectedOptions(nombreLapins).first
+            : "Aucun"),
+        "pisciculture": pisciculture ?? false,
+      },
+      "competences_et_formation": {
+        "competences_maitrisees": _getSelectedOptions(competencesMaitrisees).isNotEmpty
+            ? _getSelectedOptions(competencesMaitrisees)
+            : [],
+        "mode_formation": _getSelectedOptions(modeFormation).isNotEmpty
+            ? _getSelectedOptions(modeFormation)
+            : [],
+        "competences_interet_formation": _getSelectedOptions(competencesInteret).isNotEmpty
+            ? _getSelectedOptions(competencesInteret)
+            : [],
+      },
+      "appui_et_besoins": {
+        "appui_social": appuiSocial ?? false,
+        "appui_recu": _getSelectedOptions(appuiRecu).isNotEmpty
+            ? _getSelectedOptions(appuiRecu)
+            : [],
+        "besoins_supplementaires": _getSelectedOptions(besoinsSupplementaires).isNotEmpty
+            ? _getSelectedOptions(besoinsSupplementaires)
+            : [],
+      },
     };
+  }
+
+// Fonctions de conversion
+  int _convertSurfaceToNumber(String surface) {
+    if (surface.contains('Moins de 1000')) return 500;
+    if (surface.contains('1000-5000')) return 3000;
+    if (surface.contains('5001-10000')) return 7500;
+    if (surface.contains('10001-20000')) return 15000;
+    if (surface.contains('Plus de 20000')) return 25000;
+    return 1500;
+  }
+
+  int _convertNombreToNumber(String nombre) {
+    if (nombre.contains('1 parcelle')) return 1;
+    if (nombre.contains('2-3')) return 2;
+    if (nombre.contains('4-5')) return 4;
+    if (nombre.contains('6-10')) return 8;
+    if (nombre.contains('Plus de 10')) return 15;
+    return 1;
+  }
+
+  int _convertQuantiteToNumber(String quantite) {
+    if (quantite.contains('Moins de 10')) return 5;
+    if (quantite.contains('10-25')) return 17;
+    if (quantite.contains('26-50')) return 38;
+    if (quantite.contains('51-100')) return 75;
+    if (quantite.contains('Plus de 100')) return 150;
+    return 30;
+  }
+
+  int _convertQuantiteOrganiquToNumber(String quantite) {
+    if (quantite.contains('Moins de 50')) return 25;
+    if (quantite.contains('50-100')) return 75;
+    if (quantite.contains('101-200')) return 150;
+    if (quantite.contains('201-500')) return 350;
+    if (quantite.contains('Plus de 500')) return 750;
+    return 100;
+  }
+
+  int _convertRendementToNumber(String rendement) {
+    if (rendement.contains('Moins de 100')) return 50;
+    if (rendement.contains('100-500')) return 300;
+    if (rendement.contains('501-1000')) return 750;
+    if (rendement.contains('1001-2000')) return 1500;
+    if (rendement.contains('Plus de 2000')) return 3000;
+    return 200;
+  }
+
+  int _convertDureeToNumber(String duree) {
+    if (duree.contains('Moins de 1')) return 0;
+    if (duree.contains('1-3')) return 2;
+    if (duree.contains('4-6')) return 5;
+    if (duree.contains('7-12')) return 9;
+    if (duree.contains('Plus d\'1 an')) return 18;
+    return 4;
+  }
+
+  int _convertPerteToNumber(String perte) {
+    if (perte.contains('Moins de 5')) return 3;
+    if (perte.contains('5-10')) return 7;
+    if (perte.contains('11-20')) return 15;
+    if (perte.contains('21-30')) return 25;
+    if (perte.contains('Plus de 30')) return 40;
+    return 10;
+  }
+
+  int _convertQuantiteVendueToNumber(String quantite) {
+    if (quantite.contains('Moins de 50')) return 25;
+    if (quantite.contains('50-100')) return 75;
+    if (quantite.contains('101-200')) return 150;
+    if (quantite.contains('201-500')) return 350;
+    if (quantite.contains('Plus de 500')) return 750;
+    return 120;
+  }
+
+  int _convertPrixToNumber(String prix) {
+    if (prix.contains('Moins de 1000')) return 800;
+    if (prix.contains('1000-1500')) return 1250;
+    if (prix.contains('1501-2000')) return 1750;
+    if (prix.contains('2001-2500')) return 2250;
+    if (prix.contains('Plus de 2500')) return 3000;
+    return 1800;
+  }
+
+  int _convertNombreAnimauxToNumber(String nombre) {
+    if (nombre.contains('Aucun') || nombre.contains('Aucune')) return 0;
+    if (nombre.contains('1-10') || nombre.contains('1-2')) return 5;
+    if (nombre.contains('11-20') || nombre.contains('3-5')) return 15;
+    if (nombre.contains('21-50') || nombre.contains('6-10')) return 35;
+    if (nombre.contains('Plus de 50') || nombre.contains('Plus de 10')) return 75;
+    return 0;
   }
 
   List<String> _getSelectedOptions(Map<String, bool> options) {
@@ -431,53 +707,41 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // QUEST 1 - Années d'expérience et Surface totale
+                    // QUEST 1 - Années d'expérience
                     _buildSection(
-                      '',
+                      'Années d\'expérience en riziculture',
                       [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextField(
-                                'Années d\'expérience en riziculture',
-                                controller: anneesExperienceController,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                'Surface totale cultivée en riz en m² (approximatif)',
-                                controller: surfaceTotaleController,
-                              ),
-                            ),
-                          ],
-                        ),
+                        _buildCheckboxGrid(anneesExperience, 3),
                       ],
                     ),
 
                     const Divider(height: 48),
 
-                    // QUEST 1 - Nombre de parcelles et Surface moyenne
+                    // QUEST 1 - Surface totale cultivée
                     _buildSection(
-                      '',
+                      'Surface totale cultivée en riz',
                       [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextField(
-                                'Nombre de parcelles',
-                                controller: nombreParcellesController,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                'Surface moyenne d\'une parcelle en m²',
-                                controller: surfaceMoyenneController,
-                              ),
-                            ),
-                          ],
-                        ),
+                        _buildCheckboxGrid(surfaceTotale, 3),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 1 - Nombre de parcelles
+                    _buildSection(
+                      'Nombre de parcelles',
+                      [
+                        _buildCheckboxGrid(nombreParcelles, 3),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 1 - Surface moyenne parcelle
+                    _buildSection(
+                      'Surface moyenne d\'une parcelle',
+                      [
+                        _buildCheckboxGrid(surfaceMoyenne, 3),
                       ],
                     ),
 
@@ -493,27 +757,21 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
                     const Divider(height: 48),
 
-                    // QUEST 1 - Variétés et Quantité de semences
+                    // QUEST 1 - Variétés de semences
                     _buildSection(
-                      '',
+                      'Variété(s) de(s) semence(s)',
                       [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextField(
-                                'Variété(s) de(s) semence(s)',
-                                controller: varietesSemencesController,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                'Quantité de semences semées par an (kg)',
-                                controller: quantiteSemencesController,
-                              ),
-                            ),
-                          ],
-                        ),
+                        _buildCheckboxGrid(varietesSemences, 3),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 1 - Quantité de semences
+                    _buildSection(
+                      'Quantité de semences semées par an',
+                      [
+                        _buildCheckboxGrid(quantiteSemences, 3),
                       ],
                     ),
 
@@ -560,23 +818,38 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                           const SizedBox(height: 12),
                           _buildCheckboxGrid(typeEngrais, 3),
                           const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  'Quantité d\'engrais chimique utilisé pour les cultures (kg)',
-                                  controller: quantiteEngraisChimiqueController,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: _buildTextField(
-                                  'Fréquence d\'application des engrais',
-                                  controller: frequenceEngraisController,
-                                ),
-                              ),
-                            ],
+                          const Text(
+                            'Quantité d\'engrais chimique utilisé',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
                           ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(quantiteEngraisChimique, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Quantité d\'engrais organique utilisé',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(quantiteEngraisOrganique, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Fréquence d\'application des engrais',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(frequenceEngrais, 3),
                         ],
                       ],
                     ),
@@ -593,10 +866,16 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                         ),
                         if (utilisationAmendements == true) ...[
                           const SizedBox(height: 16),
-                          _buildTextField(
-                            'Quels amendements ? (chaux, compost, cendres, etc)',
-                            controller: amendementsController,
+                          const Text(
+                            'Types d\'amendements utilisés',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
                           ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(amendements, 3),
                         ],
                       ],
                     ),
@@ -684,31 +963,36 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                       'Mode de récolte',
                       [
                         _buildCheckboxGrid(modeRecolte, 3),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextField(
-                                'Rendement estimé par récolte (kg)',
-                                controller: rendementController,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                'Durée de stockage moyenne du riz (mois)',
-                                controller: dureeStockageController,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                'Perte post récolte estimée (%)',
-                                controller: pertePostRecolteController,
-                              ),
-                            ),
-                          ],
-                        ),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 4 - Rendement estimé
+                    _buildSection(
+                      'Rendement estimé par récolte',
+                      [
+                        _buildCheckboxGrid(rendement, 3),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 4 - Durée de stockage
+                    _buildSection(
+                      'Durée de stockage moyenne du riz',
+                      [
+                        _buildCheckboxGrid(dureeStockage, 3),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 4 - Perte post récolte
+                    _buildSection(
+                      'Perte post récolte estimée',
+                      [
+                        _buildCheckboxGrid(pertePostRecolte, 3),
                       ],
                     ),
 
@@ -744,23 +1028,27 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                         ),
                         if (vendezVousRiz == true) ...[
                           const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  'Quantité moyenne vendue par an (kg)',
-                                  controller: quantiteVendueController,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: _buildTextField(
-                                  'Prix moyen de vente (Ar/kg)',
-                                  controller: prixVenteController,
-                                ),
-                              ),
-                            ],
+                          const Text(
+                            'Quantité moyenne vendue par an',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
                           ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(quantiteVendue, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Prix moyen de vente',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(prixVente, 3),
                           const SizedBox(height: 16),
                           const Text(
                             'Lieu de vente',
@@ -786,6 +1074,219 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                           value: cultivezRizHybride,
                           onChanged: (val) => setState(() => cultivezRizHybride = val),
                         ),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 5 - Diversification des activités
+                    _buildSection(
+                      'Diversification des activités',
+                      [
+                        const Text(
+                          'Autres cultures pratiquées',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCheckboxGrid(autresCultures, 3),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Pratiquez-vous l\'élevage ?',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildYesNoRadio(
+                          value: elevage,
+                          onChanged: (val) => setState(() => elevage = val),
+                        ),
+                        if (elevage == true) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de poules',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombrePoules, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de volailles',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombreVolailles, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de boeufs',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombreBoeufs, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de porcs',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombrePorc, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de moutons',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombreMoutons, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de chèvres',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombreChevres, 3),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Nombre de lapins',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(nombreLapins, 3),
+                        ],
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Pratiquez-vous la pisciculture ?',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildYesNoRadio(
+                          value: pisciculture,
+                          onChanged: (val) => setState(() => pisciculture = val),
+                        ),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 6 - Compétences et formation
+                    _buildSection(
+                      'Compétences et formation',
+                      [
+                        const Text(
+                          'Compétences maîtrisées',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCheckboxGrid(competencesMaitrisees, 3),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Mode de formation',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCheckboxGrid(modeFormation, 3),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Compétences d\'intérêt pour la formation',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCheckboxGrid(competencesInteret, 3),
+                      ],
+                    ),
+
+                    const Divider(height: 48),
+
+                    // QUEST 7 - Appui et besoins
+                    _buildSection(
+                      'Appui et besoins',
+                      [
+                        const Text(
+                          'Bénéficiez-vous d\'un appui social ?',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildYesNoRadio(
+                          value: appuiSocial,
+                          onChanged: (val) => setState(() => appuiSocial = val),
+                        ),
+                        if (appuiSocial == true) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Appui reçu',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildCheckboxGrid(appuiRecu, 3),
+                        ],
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Besoins supplémentaires',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCheckboxGrid(besoinsSupplementaires, 3),
                       ],
                     ),
 
@@ -836,12 +1337,16 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                               const SizedBox(width: 12),
                               ElevatedButton(
                                 onPressed: () {
-                                  // Sauvegarder et retourner avec les données JSON complètes
-                                  final completeJsonData = _generateCompleteJson();
-                                  print('Données complètes du questionnaire: ${completeJsonData}');
+                                  // Sauvegarder et retourner avec les données JSON
+                                  final jsonData = _generateQuestionnaireData();
 
-                                  // Retourner les données au parent
-                                  Navigator.pop(context, completeJsonData);
+                                  print('📤 RETOUR DES DONNÉES QUESTIONNAIRE:');
+                                  print('   Type: ${jsonData.runtimeType}');
+                                  print('   Keys: ${jsonData.keys.join(', ')}');
+                                  print('   Exploitation: ${jsonData['exploitation']}');
+
+                                  // Retourner les données au parent (IMPORTANT: c'est une Map, pas une List)
+                                  Navigator.pop(context, {'questionnaire_parcelles': [jsonData]});
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF1AB999),
@@ -887,43 +1392,6 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
           ...children,
         ],
       ),
-    );
-  }
-
-  Widget _buildTextField(String label, {required TextEditingController controller}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF333333),
-            fontWeight: FontWeight.w500,
-            fontSize: 14,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFD0D5DD)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFD0D5DD)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF1AB999), width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-        ),
-      ],
     );
   }
 

@@ -7,7 +7,7 @@ import 'screens/side_menu.dart'; // Doit pointer vers le bon fichier
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  debugShowCheckedModeBanner: false;
   // Initialiser le service de connexion
   await ConnectionService().initialize();
 

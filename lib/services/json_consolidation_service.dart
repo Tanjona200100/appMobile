@@ -153,10 +153,11 @@ class JsonConsolidationService {
 
   /// Convertit le format local en format master (API)
   Map<String, dynamic> _convertLocalToMasterFormat(Map<String, dynamic> localData) {
-    final identite = localData['identite'] as Map<String, dynamic>? ?? {};
-    final parcelle = localData['parcelle'] as Map<String, dynamic>? ?? {};
-    final metadata = localData['metadata'] as Map<String, dynamic>? ?? {};
-    final questionnaire = localData['questionnaire_parcelles'] as List<dynamic>?;
+    // Conversion sécurisée des maps
+    final identite = _convertToStringMap(localData['identite']);
+    final parcelle = _convertToStringMap(localData['parcelle']);
+    final metadata = _convertToStringMap(localData['metadata']);
+    final questionnaire = localData['questionnaire_parcelles'];
 
     return {
       'individu': {
@@ -170,31 +171,31 @@ class JsonConsolidationService {
         'adresse': identite['adresse'],
         'gps_point': '${parcelle['latitude']},${parcelle['longitude']}',
         'photo': '',
-        'user_id': metadata['agent_id'] ?? 1,
+        'user_id': _safeInt(metadata['agent_id'], 1),
         'commune_id': 2,
         'nom_pere': identite['nom_pere'],
         'nom_mere': identite['nom_mere'],
         'profession': identite['metier'],
         'activites_complementaires': identite['activites_complementaires'],
         'statut_matrimonial': identite['statut_matrimonial'],
-        'nombre_personnes_a_charge': identite['nombre_personnes_charge'],
+        'nombre_personnes_a_charge': _safeInt(identite['nombre_personnes_charge']),
         'telephone': identite['telephone1'],
-        'cin': identite['cin'],
+        'cin': _buildCinData(identite['cin']),
         'commune_nom': identite['commune'],
         'fokontany_nom': identite['fokontany'],
-        'nombre_enfants': identite['nombre_enfants'],
+        'nombre_enfants': _safeInt(identite['nombre_enfants']),
         'telephone2': identite['telephone2'],
       },
       'parcelles': [
         {
           'nom': parcelle['nom'],
-          'superficie': parcelle['superficie'],
-          'gps': parcelle['gps'],
-          'geom': parcelle['geom'],
+          'superficie': _safeDouble(parcelle['superficie'], 1500.0),
+          'gps': _safeGpsData(parcelle['gps']),
+          'geom': _buildGeomData(parcelle),
           'description': parcelle['description'],
         }
       ],
-      'questionnaire_parcelles': questionnaire,
+      'questionnaire_parcelles': _buildQuestionnaireData(questionnaire),
     };
   }
 
@@ -211,7 +212,7 @@ class JsonConsolidationService {
         };
       }
 
-      final cin = formData.identite['cin'] as Map<String, dynamic>?;
+      final cin = _convertToStringMap(formData.identite)['cin'] as Map<String, dynamic>?;
       final numeroCIN = cin?['numero']?.toString().trim() ?? '';
 
       if (numeroCIN.isNotEmpty) {
@@ -265,44 +266,156 @@ class JsonConsolidationService {
 
   /// Convertit FormData en format JSON pour le fichier master (format API)
   Map<String, dynamic> _convertFormDataToMasterFormat(FormData formData) {
-    // Convertir en format API complet
+    print('🔧 CONVERSION JSON pour ${formData.uuid}');
+
+    // Conversion sécurisée des maps
+    final identite = _convertToStringMap(formData.identite);
+    final parcelle = _convertToStringMap(formData.parcelle);
+    final metadata = _convertToStringMap(formData.metadata);
+
+    // Variables préparées pour les valeurs complexes
+    final user_id = _safeInt(metadata['agent_id'], 1);
+    final nombrePersonnesCharge = _safeInt(identite['nombre_personnes_charge']);
+    final nombreEnfants = _safeInt(identite['nombre_enfants']);
+    final superficie = _safeDouble(parcelle['superficie'], 1500.0);
+
+    // Structures complexes préparées
+    final gpsData = {
+      'latitude': _safeDouble(parcelle['latitude'], -18.879),
+      'longitude': _safeDouble(parcelle['longitude'], 47.5078),
+      'altitude': _safeDouble(parcelle['altitude'], 1280.0),
+    };
+
+    final geomData = _buildGeomData(parcelle);
+
     return {
       'individu': {
         'uuid': formData.uuid,
-        'nom': formData.identite['nom'],
-        'prenom': formData.identite['prenom'],
-        'surnom': formData.identite['surnom'],
-        'sexe': formData.identite['sexe'],
-        'date_naissance': formData.identite['date_naissance'],
-        'lieu_naissance': formData.identite['lieu_naissance'],
-        'adresse': formData.identite['adresse'],
-        'gps_point': '${formData.parcelle['latitude']},${formData.parcelle['longitude']}',
-        'photo': '', // À adapter selon votre gestion d'images
-        'user_id': formData.metadata['agent_id'] ?? 1,
-        'commune_id': 2, // À adapter selon vos besoins
-        'nom_pere': formData.identite['nom_pere'],
-        'nom_mere': formData.identite['nom_mere'],
-        'profession': formData.identite['metier'],
-        'activites_complementaires': formData.identite['activites_complementaires'],
-        'statut_matrimonial': formData.identite['statut_matrimonial'],
-        'nombre_personnes_a_charge': formData.identite['nombre_personnes_charge'],
-        'telephone': formData.identite['telephone1'],
-        'cin': formData.identite['cin'],
-        'commune_nom': formData.identite['commune'],
-        'fokontany_nom': formData.identite['fokontany'],
-        'nombre_enfants': formData.identite['nombre_enfants'],
-        'telephone2': formData.identite['telephone2'],
+        'nom': identite['nom'] ?? 'Inconnu',
+        'prenom': identite['prenom'] ?? 'Inconnu',
+        'surnom': identite['surnom'] ?? '',
+        'sexe': identite['sexe'] ?? '',
+        'date_naissance': identite['date_naissance'] ?? '',
+        'lieu_naissance': identite['lieu_naissance'] ?? '',
+        'adresse': identite['adresse'] ?? '',
+        'gps_point': '${parcelle['latitude'] ?? -18.879},${parcelle['longitude'] ?? 47.5078}',
+        'photo': '',
+        'user_id': user_id,
+        'commune_id': 2,
+        'nom_pere': identite['nom_pere'] ?? '',
+        'nom_mere': identite['nom_mere'] ?? '',
+        'profession': identite['metier'] ?? '',
+        'activites_complementaires': identite['activites_complementaires'] ?? '',
+        'statut_matrimonial': identite['statut_matrimonial'] ?? '',
+        'nombre_personnes_a_charge': nombrePersonnesCharge,
+        'telephone': identite['telephone1'] ?? '',
+        'cin': _buildCinData(identite['cin']),
+        'commune_nom': identite['commune'] ?? 'Non spécifié',
+        'fokontany_nom': identite['fokontany'] ?? 'Non spécifié',
+        'nombre_enfants': nombreEnfants,
+        'telephone2': identite['telephone2'] ?? '',
       },
       'parcelles': [
         {
-          'nom': formData.parcelle['nom'],
-          'superficie': formData.parcelle['superficie'],
-          'gps': formData.parcelle['gps'],
-          'geom': formData.parcelle['geom'],
-          'description': formData.parcelle['description'],
+          'nom': parcelle['nom'] ?? 'Parcelle ${identite['nom']} ${identite['prenom']}',
+          'superficie': superficie,
+          'gps': gpsData,
+          'geom': geomData,
+          'description': parcelle['description'] ?? 'Rizière en terrasse',
         }
       ],
-      'questionnaire_parcelles': formData.questionnaire_parcelles,
+      'questionnaire_parcelles': _buildQuestionnaireData(formData.questionnaire_parcelles),
+    };
+  }
+
+  // Fonction utilitaire pour convertir Map<dynamic, dynamic> en Map<String, dynamic>
+  Map<String, dynamic> _convertToStringMap(dynamic originalMap) {
+    if (originalMap == null) return {};
+    if (originalMap is! Map) return {};
+
+    final Map<String, dynamic> result = {};
+    originalMap.forEach((key, value) {
+      final String stringKey = key.toString();
+      result[stringKey] = value;
+    });
+    return result;
+  }
+
+  // Fonctions utilitaires
+  int _safeInt(dynamic value, [int defaultValue = 0]) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? defaultValue;
+    if (value is double) return value.toInt();
+    return defaultValue;
+  }
+
+  double _safeDouble(dynamic value, [double defaultValue = 0.0]) {
+    if (value == null) return defaultValue;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? defaultValue;
+    return defaultValue;
+  }
+
+  dynamic _buildCinData(dynamic cinData) {
+    if (cinData == null) return null;
+    if (cinData is Map) return _convertToStringMap(cinData);
+    if (cinData is String) return {'numero': cinData};
+    return null;
+  }
+
+  dynamic _buildGeomData(Map<String, dynamic> parcelle) {
+    return {
+      'type': 'Point',
+      'coordinates': [
+        _safeDouble(parcelle['longitude'], 47.5078),
+        _safeDouble(parcelle['latitude'], -18.879)
+      ]
+    };
+  }
+
+  dynamic _buildQuestionnaireData(dynamic questionnaire) {
+    if (questionnaire == null) return [];
+
+    // Si c'est déjà une List, la retourner
+    if (questionnaire is List) {
+      if (questionnaire.isEmpty) return [];
+
+      // Nettoyer chaque élément de la liste
+      return questionnaire.map((item) {
+        if (item is Map) {
+          return _convertToStringMap(item);
+        }
+        return item;
+      }).toList();
+    }
+
+    // Si c'est une Map, la mettre dans un tableau
+    if (questionnaire is Map) {
+      return [_convertToStringMap(questionnaire)];
+    }
+
+    // Par défaut, retourner un tableau vide
+    return [];
+  }
+
+  /// Sécurise les données GPS
+  Map<String, dynamic> _safeGpsData(dynamic gpsData) {
+    if (gpsData is Map) {
+      final safeMap = _convertToStringMap(gpsData);
+      return {
+        'latitude': _safeDouble(safeMap['latitude'], -18.879),
+        'longitude': _safeDouble(safeMap['longitude'], 47.5078),
+        'altitude': _safeDouble(safeMap['altitude'], 1280.0),
+      };
+    }
+
+    // Fallback si gpsData n'existe pas ou est invalide
+    return {
+      'latitude': -18.879,
+      'longitude': 47.5078,
+      'altitude': 1280.0,
     };
   }
 
