@@ -1807,7 +1807,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
           Row(
             children: [
               Text(
-                'Liste des individus (${_allForms.length})',
+                'Dashboard (${_allForms.length})',
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -2808,7 +2808,6 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
 
           Container(
             decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFF1AB999), width: 2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: ElevatedButton.icon(
@@ -2909,7 +2908,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
           const Text('Statistiques', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF003D82))),
           const SizedBox(height: 16),
 
-          const Text('📁 Données locales', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1AB999))),
+          const Text('Données locales', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1AB999))),
           const SizedBox(height: 8),
           _buildStatItem('Total formulaires', _allForms.length.toString()),
           _buildStatItem('Formulaires synchronisés', (_allForms.length - _pendingSyncForms.length).toString()),
@@ -2919,7 +2918,7 @@ class _SideMenuState extends State<SideMenu> with ConnectionMixin {
           const Divider(),
           const SizedBox(height: 16),
 
-          const Text('📊 Fichier JSON', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple)),
+          const Text('Fichier JSON', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple)),
           const SizedBox(height: 8),
 
           if (_consolidatedJsonPath != null && File(_consolidatedJsonPath!).existsSync())

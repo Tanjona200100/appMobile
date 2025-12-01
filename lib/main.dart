@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:kartstat/services/connection_service.dart';
+
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/offline_screen.dart';
-import 'screens/side_menu.dart'; // Doit pointer vers le bon fichier
+import 'screens/side_menu.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  debugShowCheckedModeBanner: false;
+
+
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
   // Initialiser le service de connexion
   await ConnectionService().initialize();
 
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -21,6 +26,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'KARTSTAT',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,

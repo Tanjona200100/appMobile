@@ -151,53 +151,6 @@ class MenuWidget extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 20),
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFD4DCE6),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8E99AB),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.person, color: Colors.white, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Nom de l'agent",
-                            style: TextStyle(
-                                color: Color(0xFF333333),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis),
-                        Text('Profil paramètres',
-                            style: TextStyle(
-                              color: Color(0xFF8E99AB),
-                              fontSize: 11,
-                            ),
-                            overflow: TextOverflow.ellipsis),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings,
-                        color: Color(0xFF8E99AB), size: 20),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () {},
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 12),
             InkWell(
               onTap: onLogout,
@@ -236,13 +189,6 @@ class MenuWidget extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: const BoxDecoration(
-                color: Color(0xFF8E99AB), shape: BoxShape.circle),
-            child: const Icon(Icons.person, color: Colors.white, size: 28),
-          ),
           const SizedBox(height: 12),
           InkWell(
             onTap: onLogout,
